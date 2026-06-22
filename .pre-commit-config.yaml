@@ -1,0 +1,26 @@
+# Local hooks reuse the uv-managed dev deps (ruff, commitizen) — no external
+# repo revs to pin or autoupdate. Install with:
+#   uv run pre-commit install
+#   uv run pre-commit install --hook-type commit-msg
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: commitizen
+        name: commitizen check
+        entry: uv run cz check --commit-msg-file
+        language: system
+        stages: [commit-msg]
