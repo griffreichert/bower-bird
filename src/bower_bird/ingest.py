@@ -1,16 +1,20 @@
 """Vault writes — the only side effects that touch the vault.
 
-Hard boundary (per INVARIANTS): runtime vault writes are limited to
-`Clippings/` and `reading-list.md`. Backlinks into the evergreen layer
-(`g/learning/`) are *proposed inside the clipping*, never written into those
-raw notes — the agent proposes, I decide. `_assert_writable` enforces this in
-code so a future change can't quietly break it.
+Hard boundary (per INVARIANTS): bower-bird owns the `BowerBird/` folder
+(`config.vault_path`) and writes *nowhere else*. `_assert_writable` enforces
+that in code so a future change can't quietly break it.
+
+Additive-autonomous: bower-bird creates its own notes (sources/, new concept
+notes) and asserts `[[links]]` freely, but it **never rewrites or deletes an
+existing note**. Every write here is either a brand-new file or a strictly
+additive append (`_append_link`) — so nothing a human authored is ever
+clobbered.
 """
 
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 from .config import Config
@@ -19,31 +23,18 @@ from .llm import ClippingPlan
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
 _SKIP_NOTE_STEMS = {"_index", "_archive", "_template", "__init__"}
+_LINKS_HEADING = "## Links"
 
 
 def _assert_writable(config: Config, path: Path) -> None:
+    """Refuse any write outside the owned `BowerBird/` folder."""
     resolved = path.resolve()
-    allowed = (
-        resolved == config.reading_list_path.resolve()
-        or config.clippings_dir.resolve() in resolved.parents
-    )
-    if not allowed:
+    root = config.vault_path.resolve()
+    if resolved != root and root not in resolved.parents:
         raise PermissionError(
-            f"Refusing to write outside the research sandbox: {resolved}. "
-            "Only Clippings/ and reading-list.md are writable at runtime."
+            f"Refusing to write outside the owned folder: {resolved}. "
+            f"Only {root} and its contents are writable at runtime."
         )
-
-
-def list_evergreen_notes(config: Config) -> list[str]:
-    """Existing evergreen-note titles — candidates for proposed backlinks."""
-    if not config.learning_dir.is_dir():
-        return []
-    titles: list[str] = []
-    for path in sorted(config.learning_dir.glob("*.md")):
-        if path.stem in _SKIP_NOTE_STEMS:
-            continue
-        titles.append(path.stem)
-    return titles
 
 
 def _safe_filename(title: str) -> str:
@@ -52,21 +43,75 @@ def _safe_filename(title: str) -> str:
     return (cleaned or "untitled")[:120]
 
 
+def _today() -> str:
+    return datetime.now().date().isoformat()
+
+
+def list_concept_notes(config: Config) -> list[str]:
+    """Existing concept-note titles in notes/ — candidates for backlinks."""
+    if not config.notes_dir.is_dir():
+        return []
+    titles: list[str] = []
+    for path in sorted(config.notes_dir.glob("*.md")):
+        if path.stem in _SKIP_NOTE_STEMS:
+            continue
+        titles.append(path.stem)
+    return titles
+
+
+_CONCEPT_STUB = """\
+---
+title: "{title}"
+created: {today}
+bower: generated
+tags:
+  - concept
+---
+# {title}
+"""
+
+
+def _append_link(config: Config, path: Path, target_title: str) -> None:
+    """Append `- [[target]]` under a `## Links` heading. Strictly additive:
+    never edits existing text. When the note doesn't exist yet, seed it with a
+    well-formed concept-note header first (so auto-created notes aren't bare
+    stubs). Idempotent — a link already present is not duplicated."""
+    _assert_writable(config, path)
+    line = f"- [[{target_title}]]"
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+    else:
+        text = _CONCEPT_STUB.format(title=path.stem, today=_today())
+
+    if line in text:
+        return
+
+    if _LINKS_HEADING in text:
+        out = text.replace(f"{_LINKS_HEADING}\n", f"{_LINKS_HEADING}\n{line}\n", 1)
+    else:
+        sep = "" if text == "" or text.endswith("\n") else "\n"
+        out = f"{text}{sep}\n{_LINKS_HEADING}\n{line}\n"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(out, encoding="utf-8")
+
+
 # --------------------------------------------------------------------------- #
-# to-read lane
+# to-read lane (bare links — unread, metadata only)
 # --------------------------------------------------------------------------- #
 
 _READING_LIST_HEADER = """\
 ---
 title: Reading list
 created: {today}
+bower: generated
 tags:
-  - clippings
+  - reading-list
 ---
 # Reading list
 
-Links to read, captured by bower-bird. Check one off when read, then promote it
-to a clipping in `Clippings/`.
+Unread links captured by bower-bird. Check one off when read, then it can be
+promoted to a source note.
 
 #type/reference #domain/personal #status/active
 
@@ -81,10 +126,7 @@ def append_to_reading_list(config: Config, url: str, title: str, oneline: str) -
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if not path.exists():
-        path.write_text(
-            _READING_LIST_HEADER.format(today=date.today().isoformat()),
-            encoding="utf-8",
-        )
+        path.write_text(_READING_LIST_HEADER.format(today=_today()), encoding="utf-8")
 
     existing = path.read_text(encoding="utf-8")
     if url in existing:
@@ -97,65 +139,107 @@ def append_to_reading_list(config: Config, url: str, title: str, oneline: str) -
 
 
 # --------------------------------------------------------------------------- #
-# learned lane
+# catch-all inbox (Telegram messages we couldn't process)
 # --------------------------------------------------------------------------- #
 
-_CLIPPING_TEMPLATE = """\
+_TELEGRAM_INBOX_HEADER = """\
+---
+title: Inbox
+created: {today}
+bower: generated
+tags:
+  - inbox
+---
+# Inbox
+
+Telegram messages bower-bird couldn't process (no link, or a fetch failure).
+Nothing is dropped — triage these by hand.
+
+"""
+
+
+def append_to_telegram_inbox(config: Config, text: str, reason: str) -> None:
+    """Park an unprocessable Telegram message with a timestamp + reason."""
+    path = config.telegram_inbox_path
+    _assert_writable(config, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not path.exists():
+        path.write_text(_TELEGRAM_INBOX_HEADER.format(today=_today()), encoding="utf-8")
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    flat = " ".join(text.split())
+    entry = f"- `{stamp}` ({reason}) {flat}\n"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(entry)
+
+
+# --------------------------------------------------------------------------- #
+# learned lane (read items — source note in sources/, links into notes/)
+# --------------------------------------------------------------------------- #
+
+_SOURCE_TEMPLATE = """\
 ---
 title: "{title}"
 source: "{url}"
 created: {today}
 description: "{description}"
+bower: generated
 tags:
-  - clippings
+  - source
 ---
 # {title}
 
-## My note
-{note}
-
-## Proposed links
-> _Suggested by bower-bird — accept the ones you want, ignore the rest._
-
+## Links
 {backlinks}
 
-{proposed_note}
-
 {connection}
+
+## Captured
+{captured}
 """
 
 
-def create_clipping(
-    config: Config, meta: PageMeta, note: str, plan: ClippingPlan
+def create_source_note(
+    config: Config, meta: PageMeta, captured: str, plan: ClippingPlan
 ) -> Path | None:
-    """Write a clipping into Clippings/. Returns None if it already exists."""
-    config.clippings_dir.mkdir(parents=True, exist_ok=True)
-    path = config.clippings_dir / f"{_safe_filename(meta.title)}.md"
+    """Write a source note into sources/ and assert links into the graph.
+
+    Returns the source-note path, or None if a note for this source already
+    exists (filename-level guard; primary dedup is in state).
+    """
+    config.sources_dir.mkdir(parents=True, exist_ok=True)
+    source_title = _safe_filename(meta.title)
+    path = config.sources_dir / f"{source_title}.md"
     _assert_writable(config, path)
     if path.exists():
         return None
 
+    targets = list(plan.proposed_backlinks)
+    if plan.proposed_note_title:
+        targets.append(plan.proposed_note_title)
+
     backlinks = (
-        "\n".join(f"- [[{link}]]" for link in plan.proposed_backlinks)
-        if plan.proposed_backlinks
-        else "- _(no existing notes matched)_"
-    )
-    proposed_note = (
-        f"**Proposed new evergreen note:** [[{plan.proposed_note_title}]]"
-        if plan.proposed_note_title
-        else ""
+        "\n".join(f"- [[{t}]]" for t in targets)
+        if targets
+        else "- _(no connections yet)_"
     )
     connection = f"**Why these connect:** {plan.connection}" if plan.connection else ""
 
-    body = _CLIPPING_TEMPLATE.format(
+    body = _SOURCE_TEMPLATE.format(
         title=meta.title.replace('"', "'"),
         url=meta.url,
-        today=date.today().isoformat(),
+        today=_today(),
         description=plan.description.replace('"', "'"),
-        note=note or "_(captured via `read:` with no note)_",
         backlinks=backlinks,
-        proposed_note=proposed_note,
         connection=connection,
+        captured=captured.strip() or "_(no note or excerpt captured)_",
     )
     path.write_text(body, encoding="utf-8")
+
+    # Assert reciprocal links into the concept graph (additive only).
+    for target in targets:
+        concept_path = config.notes_dir / f"{_safe_filename(target)}.md"
+        _append_link(config, concept_path, source_title)
+
     return path

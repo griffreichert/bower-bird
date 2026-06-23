@@ -3,9 +3,12 @@
 Loaded once at startup. The Anthropic SDK reads ANTHROPIC_API_KEY from the
 environment itself, so it is not stored here.
 
-The vault is *not* part of this repo. It lives in iCloud and is reachable via
-the gitignored `notes/` symlink (notes/ -> G/g/projects/bower-bird). The vault
-root is three parents up from that target. Override with BOWER_VAULT_PATH.
+The vault is *not* part of this repo. It lives in iCloud. bower-bird owns one
+folder there, `BowerBird/`, and writes nowhere else (per INVARIANTS). That
+owned folder is `vault_path`. We locate it from the gitignored `notes/` symlink
+(notes/ -> G/g/projects/bower-bird): the Obsidian root (.../G) is three parents
+up from that target, and the owned folder is `<root>/BowerBird`. Override with
+BOWER_VAULT_PATH.
 """
 
 from __future__ import annotations
@@ -23,12 +26,15 @@ DEFAULT_MODEL = "claude-haiku-4-5"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# The single vault folder bower-bird owns and writes into.
+OWNED_FOLDER = "BowerBird"
+
 
 def _default_vault_path() -> Path | None:
-    """Resolve the vault root from the `notes/` symlink, if present.
+    """Resolve bower-bird's owned folder from the `notes/` symlink, if present.
 
-    notes/ -> .../G/g/projects/bower-bird, so the vault root (.../G) is
-    parents[2] of the resolved target.
+    notes/ -> .../G/g/projects/bower-bird, so the Obsidian root (.../G) is
+    parents[2] of the resolved target, and the owned folder is `<root>/BowerBird`.
     """
     link = REPO_ROOT / "notes"
     try:
@@ -36,7 +42,7 @@ def _default_vault_path() -> Path | None:
     except (OSError, RuntimeError):
         return None
     if len(target.parents) >= 3:
-        return target.parents[2]
+        return target.parents[2] / OWNED_FOLDER
     return None
 
 
@@ -49,20 +55,37 @@ class Config:
     fetch_timeout: float
     drain_limit: int
 
-    # --- Derived vault locations (the only places we may write at runtime) ---
+    # --- Derived locations inside the owned folder (everything we touch) ---
     @property
-    def clippings_dir(self) -> Path:
-        return self.vault_path / "Clippings"
+    def inbox_dir(self) -> Path:
+        """Where the Obsidian Web Clipper drops clips to be processed."""
+        return self.vault_path / "inbox"
+
+    @property
+    def telegram_inbox_path(self) -> Path:
+        """Catch-all log for Telegram messages we couldn't process."""
+        return self.vault_path / "_inbox.md"
 
     @property
     def reading_list_path(self) -> Path:
-        return self.vault_path / "g" / "learning" / "reading-list.md"
+        """To-read queue: bare links, unread, metadata only (never distilled)."""
+        return self.vault_path / "reading-list.md"
 
     @property
-    def learning_dir(self) -> Path:
-        """Evergreen-note directory. Read-only at runtime: we *propose*
-        backlinks into these notes, we never edit them (per INVARIANTS)."""
-        return self.vault_path / "g" / "learning"
+    def sources_dir(self) -> Path:
+        """One note per processed source (clip / url + extracted content)."""
+        return self.vault_path / "sources"
+
+    @property
+    def notes_dir(self) -> Path:
+        """Evergreen concept notes — the graph we link into. Additive-only on
+        human-authored notes (per INVARIANTS); bower-bird may create its own."""
+        return self.vault_path / "notes"
+
+    @property
+    def archive_dir(self) -> Path:
+        """Processed clipper originals, moved here (never hard-deleted)."""
+        return self.vault_path / "archive"
 
 
 def load_config() -> Config:
