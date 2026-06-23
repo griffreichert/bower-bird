@@ -1,14 +1,15 @@
-"""Drain orchestration: one pass over the Telegram queue.
+"""Drain orchestration: one pass over both capture lanes.
 
 Capture is instant; processing waits until the laptop is awake. Each
-invocation drains whatever has piled up, routes every item, writes to the
-vault, and sends a receipt. Run it from a cron/launchd job (e.g. daily) or by
-hand. Designed to finish within the current session — no long-poll loop.
+invocation (a) drains the Telegram queue, and (b) processes any Web Clipper
+drops in the inbox, routing every item and writing into the owned `BowerBird/`
+folder. Run it from a launchd job (e.g. daily) or by hand. Designed to finish
+within the current session — no long-poll loop.
 """
 
 from __future__ import annotations
 
-from . import ingest, telegram
+from . import inbox, ingest, telegram
 from .config import Config, load_config
 from .fetch import fetch
 from .llm import describe_link, synthesize_clipping
@@ -20,7 +21,9 @@ def _handle(config: Config, state: State, text: str) -> str:
     parsed = parse(text)
 
     if parsed.lane is Lane.NO_LINK:
-        return "No link found — nothing to capture."
+        # Nothing droppable — park it in the catch-all inbox, never discard.
+        ingest.append_to_telegram_inbox(config, text, reason="no link")
+        return "No link found — parked in _inbox.md."
 
     url = parsed.url
     assert url is not None  # NO_LINK is the only url-less lane
@@ -38,27 +41,35 @@ def _handle(config: Config, state: State, text: str) -> str:
             return f"Already in the reading list: {meta.title}"
         return f"Queued to read: {meta.title}\n— {oneline}"
 
-    # Lane.LEARNED
-    candidates = ingest.list_evergreen_notes(config)
+    # Lane.LEARNED — the user has read it and added a note.
+    candidates = ingest.list_concept_notes(config)
     plan = synthesize_clipping(meta, parsed.note, candidates, model=config.model)
-    path = ingest.create_clipping(config, meta, parsed.note, plan)
+    captured = parsed.note or meta.body_excerpt
+    path = ingest.create_source_note(config, meta, captured, plan)
     state.mark_url(url)
     if path is None:
-        return f"Already clipped: {meta.title}"
+        return f"Already filed: {meta.title}"
 
     links = ", ".join(f"[[{n}]]" for n in plan.proposed_backlinks) or "none yet"
-    return (
-        f"Clipped: {meta.title}\n"
-        f"Proposed links: {links}\n"
-        "Open the clipping to accept or ignore them."
-    )
+    return f"Filed: {meta.title}\nLinked: {links}"
 
 
 def drain(config: Config | None = None) -> int:
-    """Drain the queue once. Returns the number of updates processed."""
+    """Run one pass over both lanes. Returns total items processed."""
     config = config or load_config()
     state = State.load(config.state_path)
 
+    processed = _drain_telegram(config, state)
+
+    clip_log = inbox.process_inbox(config, state)
+    for line in clip_log:
+        print(f"  clip: {line}")
+    processed += len(clip_log)
+
+    return processed
+
+
+def _drain_telegram(config: Config, state: State) -> int:
     updates = telegram.get_updates(
         config.telegram_bot_token,
         offset=state.telegram_offset,
