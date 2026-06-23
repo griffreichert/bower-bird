@@ -18,6 +18,7 @@ dev = [
     "ruff>=0.8",
     "pre-commit>=4.0",
     "commitizen>=4.0",
+    "ipykernel>=6.29",
 ]
 
 [tool.ruff]
