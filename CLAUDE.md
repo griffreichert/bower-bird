@@ -19,6 +19,15 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
   body (skips `fetch`), writes a `sources/` note + links, moves the original to
   `archive/`. A clip counts as *read* → processed immediately.
 
+**Reader marks (in a clip body, `marks.py`).** The source note is thin —
+provenance + the reader's marks, **not the article body** (the full clip stays
+cold in `archive/`). Four optional marks the reader leaves while reading:
+`==highlight==` (the durable unit — interesting/supports my knowledge → `##
+Highlights`, Tier-2 grows into nest concepts), `#dig` on a line (learn more → `##
+Dig deeper`), `> ? question` (my open question → `## Open questions`), and
+outbound `[text](url)` links (→ `## Further reading`, unread leads). Highlights
+anchor Haiku's concept/backlink proposal.
+
 ## Invariants (must always hold)
 
 Load-bearing. Don't regress them. Full text:
@@ -78,6 +87,7 @@ src/bower_bird/
   state.py     telegram offset + url + clip-hash dedup (idempotency)
   telegram.py  getUpdates drain + send receipt
   router.py    two-lane classification (bare link vs link+note / read:)
+  marks.py     reader marks pulled from a clip body (highlight/dig/question/links)
   fetch.py     page metadata (title/description/excerpt)
   llm.py       Anthropic calls: describe_link, synthesize_clipping (pydantic)
   ingest.py    owned-folder writes (sources/notes/reading-list/_inbox), guarded

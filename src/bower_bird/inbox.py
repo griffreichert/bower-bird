@@ -21,6 +21,7 @@ from . import ingest
 from .config import Config
 from .fetch import PageMeta
 from .llm import synthesize_clipping
+from .marks import extract_marks
 from .state import State, content_hash
 
 _BODY_LIMIT = 6000
@@ -97,9 +98,12 @@ def process_inbox(config: Config, state: State) -> list[str]:
         try:
             fm, body = _parse_clip(raw)
             meta = _clip_to_meta(path, fm, body)
+            marks = extract_marks(body, self_url=meta.url)
             candidates = ingest.list_concept_notes(config)
-            plan = synthesize_clipping(meta, "", candidates, model=config.model)
-            note_path = ingest.create_source_note(config, meta, body, plan)
+            plan = synthesize_clipping(
+                meta, "", candidates, model=config.model, highlights=marks.highlights
+            )
+            note_path = ingest.create_source_note(config, meta, plan, marks=marks)
         except Exception as exc:  # noqa: BLE001 — one bad clip must not stall the rest
             log.append(f"error {path.name}: {exc}")
             continue
@@ -113,10 +117,14 @@ def process_inbox(config: Config, state: State) -> list[str]:
         if note_path is None:
             log.append(f"{path.name}: source note already existed; archived")
         else:
-            targets = list(plan.proposed_backlinks)
-            if plan.proposed_note_title:
-                targets.append(f"{plan.proposed_note_title} (new)")
-            links = ", ".join(targets) or "none"
-            log.append(f"{path.name} -> sources/{note_path.name} (links: {links})")
+            links = ", ".join(plan.topics) or "none"
+            marked = (
+                f"{len(marks.highlights)}h/{len(marks.dig)}d/"
+                f"{len(marks.questions)}q/{len(marks.further_links)}l"
+            )
+            log.append(
+                f"{path.name} -> sources/{note_path.name} "
+                f"(links: {links}; marks: {marked})"
+            )
 
     return log

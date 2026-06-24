@@ -13,6 +13,7 @@ from bower_bird import inbox, ingest  # noqa: E402
 from bower_bird.config import Config  # noqa: E402
 from bower_bird.fetch import PageMeta  # noqa: E402
 from bower_bird.llm import ClippingPlan  # noqa: E402
+from bower_bird.marks import Marks, extract_marks  # noqa: E402
 
 _failures = 0
 
@@ -103,16 +104,23 @@ def test_create_source_note_asserts_links() -> None:
         )
         plan = ClippingPlan(
             description="A blog post",
-            proposed_backlinks=["Caching"],
-            proposed_note_title="Cache Invalidation",
+            topics=["Caching", "Cache Invalidation"],
             connection="both about caches",
         )
-        path = ingest.create_source_note(cfg, meta, "the captured body", plan)
+        marks = Marks(
+            highlights=["a kept passage"], further_links=[("Ref", "https://r.co")]
+        )
+        path = ingest.create_source_note(
+            cfg, meta, plan, note="why it matters", marks=marks
+        )
         check(path is not None and path.exists(), "source note written")
         src = path.read_text(encoding="utf-8")
         has_links = "[[Caching]]" in src and "[[Cache Invalidation]]" in src
         check(has_links, "links in source")
-        check("the captured body" in src, "captured content stored")
+        check("## Note\nwhy it matters" in src, "human note stored")
+        check("> a kept passage" in src, "highlight stored verbatim")
+        check("[Ref](https://r.co)" in src, "further-reading link stored")
+        check("## Captured" not in src, "full article body NOT stored")
 
         # reciprocal links asserted into notes/ (new concept note created)
         concept = cfg.notes_dir / "Cache Invalidation.md"
@@ -123,7 +131,7 @@ def test_create_source_note_asserts_links() -> None:
         check("# Cache Invalidation" in concept_text, "new concept note has title")
 
         # filename-level dedup
-        again = ingest.create_source_note(cfg, meta, "x", plan)
+        again = ingest.create_source_note(cfg, meta, plan)
         check(again is None, "duplicate source note returns None")
 
 
@@ -145,11 +153,10 @@ def test_links_into_existing_nested_concept() -> None:
         )
         plan = ClippingPlan(
             description="post",
-            proposed_backlinks=["Verifiers"],
-            proposed_note_title="",
+            topics=["Verifiers"],
             connection="",
         )
-        ingest.create_source_note(cfg, meta, "body", plan)
+        ingest.create_source_note(cfg, meta, plan)
         check(
             "[[RL Post]]" in nested.read_text(encoding="utf-8"),
             "link into nested concept",
@@ -175,6 +182,36 @@ def test_parse_clip() -> None:
     check("The real content here." in body, "body content retained")
 
 
+def test_extract_marks() -> None:
+    body = (
+        "this is my article\n"
+        "woo words ==a nugget I liked==\n"
+        "> ? why havent they gotten to the point\n"
+        "> is it length or bad editing\n"
+        "how do verifiers generalize #dig\n"
+        "a plain [reference](https://other.com/x) and the [self](https://self.co)\n"
+        "> just a normal article quote, not a question\n"
+    )
+    m = extract_marks(body, self_url="https://self.co")
+    check(m.highlights == ["a nugget I liked"], "highlight extracted")
+    expect_q = "why havent they gotten to the point is it length or bad editing"
+    check(
+        m.questions == [expect_q],
+        "multi-line question folded; plain quote ignored",
+    )
+    check(m.dig == ["how do verifiers generalize"], "#dig line extracted, tag stripped")
+    check(
+        m.further_links == [("reference", "https://other.com/x")],
+        "outbound link kept, self-url dropped",
+    )
+    check(not m.empty, "marks not empty")
+
+
+def test_dig_word_boundary() -> None:
+    m = extract_marks("nothing here #digest or #digging\n")
+    check(m.dig == [], "#digest / #digging do not trigger #dig")
+
+
 def test_conflict_files_skipped() -> None:
     check(not inbox._is_processable(Path("note (conflicted copy).md")), "skip conflict")
     check(not inbox._is_processable(Path(".hidden.md")), "skip dotfile")
@@ -188,6 +225,8 @@ def main() -> int:
     test_create_source_note_asserts_links()
     test_links_into_existing_nested_concept()
     test_parse_clip()
+    test_extract_marks()
+    test_dig_word_boundary()
     test_conflict_files_skipped()
     if _failures:
         print(f"\n{_failures} failure(s).")
