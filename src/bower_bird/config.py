@@ -72,15 +72,26 @@ class Config:
         return self.vault_path / "reading-list.md"
 
     @property
+    def brain_dir(self) -> Path:
+        """The knowledge layer: distilled nests + raw sources + topic index."""
+        return self.vault_path / "brain"
+
+    @property
     def sources_dir(self) -> Path:
-        """One note per processed source (clip / url + extracted content)."""
-        return self.vault_path / "sources"
+        """Raw per-source notes (clip / url + extracted content)."""
+        return self.brain_dir / "sources"
 
     @property
     def notes_dir(self) -> Path:
-        """Evergreen concept notes — the graph we link into. Additive-only on
-        human-authored notes (per INVARIANTS); bower-bird may create its own."""
-        return self.vault_path / "notes"
+        """Concept-note root: brain/nests/. Notes live in topical subfolders
+        (nests), so callers recurse. New concepts land flat here until Tier-2
+        files them. Additive-only on human-authored notes (per INVARIANTS)."""
+        return self.brain_dir / "nests"
+
+    @property
+    def topic_index_path(self) -> Path:
+        """The nest map, maintained by Tier-2 (Claude Code)."""
+        return self.brain_dir / "_topic_index.md"
 
     @property
     def archive_dir(self) -> Path:

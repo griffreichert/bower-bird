@@ -48,15 +48,33 @@ def _today() -> str:
 
 
 def list_concept_notes(config: Config) -> list[str]:
-    """Existing concept-note titles in notes/ — candidates for backlinks."""
+    """Concept-note titles across all nests — candidates for backlinks.
+
+    Recurses brain/nests/ since concepts live in topical subfolders.
+    """
     if not config.notes_dir.is_dir():
         return []
     titles: list[str] = []
-    for path in sorted(config.notes_dir.glob("*.md")):
+    for path in sorted(config.notes_dir.rglob("*.md")):
         if path.stem in _SKIP_NOTE_STEMS:
             continue
         titles.append(path.stem)
     return titles
+
+
+def find_concept_path(config: Config, title: str) -> Path:
+    """Resolve a concept note's real path.
+
+    If a note with this title already exists anywhere under brain/nests/, return
+    its actual (possibly nested) path so we link into it rather than creating a
+    flat duplicate. Otherwise return the flat path at the nests root, where new,
+    unfiled concepts land until Tier-2 files them into a nest.
+    """
+    safe = _safe_filename(title)
+    if config.notes_dir.is_dir():
+        for path in config.notes_dir.rglob(f"{safe}.md"):
+            return path
+    return config.notes_dir / f"{safe}.md"
 
 
 _CONCEPT_STUB = """\
@@ -237,9 +255,10 @@ def create_source_note(
     )
     path.write_text(body, encoding="utf-8")
 
-    # Assert reciprocal links into the concept graph (additive only).
+    # Assert reciprocal links into the concept graph (additive only). Link into
+    # an existing nested concept where it lives; new ones land flat at the nests
+    # root for Tier-2 to file.
     for target in targets:
-        concept_path = config.notes_dir / f"{_safe_filename(target)}.md"
-        _append_link(config, concept_path, source_title)
+        _append_link(config, find_concept_path(config, target), source_title)
 
     return path
