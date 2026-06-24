@@ -44,13 +44,12 @@ def _handle(config: Config, state: State, text: str) -> str:
     # Lane.LEARNED — the user has read it and added a note.
     candidates = ingest.list_concept_notes(config)
     plan = synthesize_clipping(meta, parsed.note, candidates, model=config.model)
-    captured = parsed.note or meta.body_excerpt
-    path = ingest.create_source_note(config, meta, captured, plan)
+    path = ingest.create_source_note(config, meta, plan, note=parsed.note)
     state.mark_url(url)
     if path is None:
         return f"Already filed: {meta.title}"
 
-    links = ", ".join(f"[[{n}]]" for n in plan.proposed_backlinks) or "none yet"
+    links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
     return f"Filed: {meta.title}\nLinked: {links}"
 
 

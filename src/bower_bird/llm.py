@@ -34,16 +34,18 @@ class ClippingPlan(BaseModel):
     description: str = Field(
         description="One factual line: what this source is (type + topic)."
     )
-    proposed_backlinks: list[str] = Field(
-        description="Existing evergreen-note titles this connects to. "
-        "Prefer the supplied candidates; [] if none fit."
-    )
-    proposed_note_title: str = Field(
-        description="A title for a NEW evergreen note this could seed, phrased "
-        "as the idea (not the source). Empty string if not worth one."
+    topics: list[str] = Field(
+        description="The coarse topic notes this source feeds — a rich source "
+        "usually feeds SEVERAL. Each is a SHORT, REUSABLE concept handle: a 2-5 "
+        "word noun phrase many sources could link to (e.g. 'Agentic loops', "
+        "'Verification in agent loops'), NOT a sentence/claim, NOT the source "
+        "title. PREFER the supplied existing candidates; add a new handle only "
+        "when no candidate fits and the topic is broad enough to reuse. [] if "
+        "none fit."
     )
     connection: str = Field(
-        description="One line on why these links connect — the pointer, not a summary."
+        description="One line on how these topics connect through this source — "
+        "the pointer, not a summary."
     )
 
 
@@ -84,19 +86,34 @@ def synthesize_clipping(
     note: str,
     candidate_links: list[str],
     model: str,
+    highlights: list[str] | None = None,
 ) -> ClippingPlan:
     candidates = "\n".join(f"- {c}" for c in candidate_links) or "(none yet)"
+    highlights = highlights or []
+    highlight_block = (
+        "\nThe reader HIGHLIGHTED these passages — this is the signal for what "
+        "mattered to them. Anchor your proposed concept and backlinks on these, "
+        "not on the article as a whole:\n"
+        + "\n".join(f"- {h}" for h in highlights)
+        + "\n"
+        if highlights
+        else ""
+    )
     prompt = (
-        "I have READ this source and written a one-line note on why it matters. "
-        "Help me file it into my evergreen knowledge vault. The vault links "
-        "ideas with [[wikilinks]] and tags; folders don't matter.\n\n"
-        "Propose backlinks PREFERRING the existing evergreen notes listed as "
-        "candidates; only suggest a brand-new note title when nothing fits. "
-        "Give pointers (what connects to what and why), never a summary of the "
-        "article.\n\n"
+        "I have READ this source and want to file it into my evergreen knowledge "
+        "vault. The vault links ideas with [[wikilinks]] and tags; folders don't "
+        "matter.\n\n"
+        "List the coarse topics this source feeds — a rich source usually feeds "
+        "SEVERAL (don't force it down to one). PREFER the existing evergreen "
+        "notes listed as candidates; add a new topic only when none fits and "
+        "it's broad enough to reuse. Each topic is a SHORT, REUSABLE concept "
+        "handle (a 2-5 word noun phrase many sources could link to, e.g. "
+        "'Agentic loops'), NOT a sentence or claim, NOT the source title. Give "
+        "pointers (what connects to what and why), never a summary.\n\n"
         f"Source URL: {meta.url}\n"
         f"Source title: {meta.title}\n"
-        f"My note (why it matters): {note or '(none)'}\n\n"
+        f"My note (why it matters): {note or '(none)'}\n"
+        f"{highlight_block}\n"
         f"Existing evergreen notes (candidates for backlinks):\n{candidates}\n\n"
         f"Source excerpt (context only):\n{meta.body_excerpt[:3000]}"
     )
@@ -111,8 +128,7 @@ def synthesize_clipping(
         # e.g. a refusal — fall back to a minimal, honest clipping.
         return ClippingPlan(
             description=meta.title,
-            proposed_backlinks=[],
-            proposed_note_title="",
+            topics=[],
             connection="",
         )
     return plan

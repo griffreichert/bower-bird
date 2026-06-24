@@ -20,6 +20,7 @@ from pathlib import Path
 from .config import Config
 from .fetch import PageMeta
 from .llm import ClippingPlan
+from .marks import Marks
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
 _SKIP_NOTE_STEMS = {"_index", "_archive", "_template", "__init__"}
@@ -196,7 +197,7 @@ def append_to_telegram_inbox(config: Config, text: str, reason: str) -> None:
 # learned lane (read items — source note in sources/, links into notes/)
 # --------------------------------------------------------------------------- #
 
-_SOURCE_TEMPLATE = """\
+_SOURCE_FRONTMATTER = """\
 ---
 title: "{title}"
 source: "{url}"
@@ -204,28 +205,37 @@ created: {today}
 description: "{description}"
 bower: generated
 tags:
-  - source
+{tags}
 ---
 # {title}
-
-## Links
-{backlinks}
-
-{connection}
-
-## Captured
-{captured}
 """
 
 
-def create_source_note(
-    config: Config, meta: PageMeta, captured: str, plan: ClippingPlan
-) -> Path | None:
-    """Write a source note into sources/ and assert links into the graph.
+def _source_tags(marks: Marks) -> str:
+    """`source`, plus `dig` when the reader flagged something to go deeper on."""
+    tags = ["source"]
+    if marks.dig or marks.questions:
+        tags.append("dig")
+    return "\n".join(f"  - {t}" for t in tags)
 
-    Returns the source-note path, or None if a note for this source already
-    exists (filename-level guard; primary dedup is in state).
+
+def create_source_note(
+    config: Config,
+    meta: PageMeta,
+    plan: ClippingPlan,
+    *,
+    note: str = "",
+    marks: Marks | None = None,
+) -> Path | None:
+    """Write a (thin) source note into sources/ and assert links into the graph.
+
+    The note is provenance + the reader's marks — NOT the article body (the full
+    clip stays in archive/ cold). `note` is the human's why-it-matters line (the
+    Telegram learned lane); `marks` are the highlights/dig/questions/links pulled
+    from a clip. Returns the source-note path, or None if one already exists
+    (filename-level guard; primary dedup is in state).
     """
+    marks = marks or Marks()
     config.sources_dir.mkdir(parents=True, exist_ok=True)
     source_title = _safe_filename(meta.title)
     path = config.sources_dir / f"{source_title}.md"
@@ -233,27 +243,42 @@ def create_source_note(
     if path.exists():
         return None
 
-    targets = list(plan.proposed_backlinks)
-    if plan.proposed_note_title:
-        targets.append(plan.proposed_note_title)
+    targets = list(plan.topics)
 
     backlinks = (
         "\n".join(f"- [[{t}]]" for t in targets)
         if targets
         else "- _(no connections yet)_"
     )
-    connection = f"**Why these connect:** {plan.connection}" if plan.connection else ""
 
-    body = _SOURCE_TEMPLATE.format(
-        title=meta.title.replace('"', "'"),
-        url=meta.url,
-        today=_today(),
-        description=plan.description.replace('"', "'"),
-        backlinks=backlinks,
-        connection=connection,
-        captured=captured.strip() or "_(no note or excerpt captured)_",
-    )
-    path.write_text(body, encoding="utf-8")
+    parts = [
+        _SOURCE_FRONTMATTER.format(
+            title=meta.title.replace('"', "'"),
+            url=meta.url,
+            today=_today(),
+            description=plan.description.replace('"', "'"),
+            tags=_source_tags(marks),
+        ),
+        f"## Links\n{backlinks}\n",
+    ]
+    if plan.connection:
+        parts.append(f"**Why these connect:** {plan.connection}\n")
+    if marks.highlights:
+        body = "\n".join(f"> {h}" for h in marks.highlights)
+        parts.append(f"## Highlights\n{body}\n")
+    if note.strip():
+        parts.append(f"## Note\n{note.strip()}\n")
+    if marks.dig:
+        body = "\n".join(f"- {d}" for d in marks.dig)
+        parts.append(f"## Dig deeper\n{body}\n")
+    if marks.questions:
+        body = "\n".join(f"- {q}" for q in marks.questions)
+        parts.append(f"## Open questions\n{body}\n")
+    if marks.further_links:
+        body = "\n".join(f"- [{a}]({u})" for a, u in marks.further_links)
+        parts.append(f"## Further reading\n{body}\n")
+
+    path.write_text("\n".join(parts), encoding="utf-8")
 
     # Assert reciprocal links into the concept graph (additive only). Link into
     # an existing nested concept where it lives; new ones land flat at the nests
