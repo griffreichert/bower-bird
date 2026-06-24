@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="bower-bird.png" alt="bower-bird" width="320">
+  <img src="assets/logo-transparent.png" alt="bower-bird" width="320">
 </p>
 
 <h1 align="center">bower-bird</h1>
