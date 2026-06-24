@@ -127,6 +127,37 @@ def test_create_source_note_asserts_links() -> None:
         check(again is None, "duplicate source note returns None")
 
 
+def test_links_into_existing_nested_concept() -> None:
+    """A concept living in a nest gets the reciprocal link there — not a flat dup."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        nested = cfg.notes_dir / "llms" / "Verifiers.md"
+        nested.parent.mkdir(parents=True)
+        nested.write_text("---\ntitle: Verifiers\n---\n# Verifiers\n", encoding="utf-8")
+
+        resolved = ingest.find_concept_path(cfg, "Verifiers")
+        check(resolved == nested, "find_concept_path resolves into the nest")
+
+        meta = PageMeta(
+            url="https://x.co/v", title="RL Post", description="", body_excerpt="b"
+        )
+        plan = ClippingPlan(
+            description="post",
+            proposed_backlinks=["Verifiers"],
+            proposed_note_title="",
+            connection="",
+        )
+        ingest.create_source_note(cfg, meta, "body", plan)
+        check(
+            "[[RL Post]]" in nested.read_text(encoding="utf-8"),
+            "link into nested concept",
+        )
+        flat_dup = cfg.notes_dir / "Verifiers.md"
+        check(not flat_dup.exists(), "no flat duplicate created")
+
+
 def test_parse_clip() -> None:
     raw = (
         "---\n"
@@ -155,6 +186,7 @@ def main() -> int:
     test_append_link_additive_and_idempotent()
     test_reading_list_and_inbox()
     test_create_source_note_asserts_links()
+    test_links_into_existing_nested_concept()
     test_parse_clip()
     test_conflict_files_skipped()
     if _failures:
