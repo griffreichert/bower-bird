@@ -6,68 +6,91 @@ what it is, the no-server architecture, the capture model, and the roadmap — s
 
 ## Capture model (spec)
 
-One Telegram bot, two lanes, told apart by how a message is sent:
+Two capture entry points, both landing in the owned `BowerBird/` folder:
 
-- **bare link → to-read:** append to the reading list as `- [ ]` + title +
-  one-line "what is it" (metadata, not a summary). No distillation.
-- **link + a note, or `read:` prefix → learned:** create a clipping in
-  `Clippings/` + propose `[[backlinks]]` into the evergreen layer.
+- **Telegram bot** (Tier-1 Haiku drain):
+  - **bare link → to-read:** append to `reading-list.md` as `- [ ]` + title +
+    one-line "what is it" (metadata, not a summary). No distillation.
+  - **link + a note, or `read:` prefix → learned:** create a source note in
+    `sources/` + assert `[[links]]` into `notes/`.
+  - **unprocessable (no link / junk) → `_inbox.md`** with a reason. Nothing
+    dropped.
+- **Obsidian Web Clipper → `inbox/`:** the Tier-1 drain reads the clean clip
+  body (skips `fetch`), writes a `sources/` note + links, moves the original to
+  `archive/`. A clip counts as *read* → processed immediately.
 
 ## Invariants (must always hold)
 
-Load-bearing. Don't regress them.
+Load-bearing. Don't regress them. Full text:
+[`notes/INVARIANTS.md`](notes/INVARIANTS.md).
 
-- **Research profile only.** Never gets repo-write, shell-exec, push, or merge
-  permissions — that belongs to the separate `coding` profile.
-- **Proposes, never asserts.** Creates clippings and *suggests* `[[links]]`;
-  never edits raw/source notes without explicit per-session approval.
+- **Research profile only.** Never gets push or merge permissions — that
+  belongs to the separate `coding` profile.
+- **Owns `BowerBird/`; touches nothing outside it.** Every runtime write lands
+  under the owned folder.
+- **Additive-autonomous.** Inside `BowerBird/` it creates notes and asserts
+  `[[links]]` without asking, but **never rewrites or deletes human-authored
+  text** — only appends.
 - **Never distill an article that hasn't been read.** The reading queue holds
-  unread items (metadata only); the evergreen layer only ever gets what was
-  actually read.
-- **Output is pointers, not summaries.** It gives things to read and why they
-  connect — it never replaces the reading.
+  unread items (metadata only); `sources/`/`notes/` only get what was read. A
+  Web Clipper save counts as read; a bare link does not.
+- **Output is pointers, not summaries** for unread items.
 - **Quiet by default.** Stay silent when there's nothing worth surfacing.
-- **Idempotent.** An item already processed is never double-processed
-  (Telegram offset + url dedup in `state.py`).
-- **Session-budget aware.** Scope work to the remaining model/session allowance;
-  downscale the model, prefer tasks that finish in the current session.
+- **Idempotent.** Already-processed items are never double-processed — Telegram
+  offset + url dedup + clip content-hash, all in `state.py` (in the repo, so it
+  survives archiving).
+- **Session-budget aware.** Scope work to the remaining model/session allowance.
 
 ## Vault write boundary
 
-The vault is **not** in this repo — it lives in iCloud (Obsidian), reachable via
-the gitignored `notes/` symlink. At runtime the agent may write **only**:
+The vault is **not** in this repo — it lives in iCloud (Obsidian). bower-bird
+owns one folder there, `BowerBird/` (`config.vault_path`), and writes **nowhere
+else**. Writable at runtime: `inbox/`, `sources/`, `notes/`, `archive/`,
+`reading-list.md`, `_inbox.md`, `digests/`.
 
-- `Clippings/` — new clipping files
-- `g/learning/reading-list.md` — the reading queue
+Writes are additive: new files, or `_append_link` appends under `## Links` —
+existing notes are never rewritten. `ingest._assert_writable` enforces the
+folder boundary in code — keep it that way. (The `notes/` symlink in the repo
+points at the project's *planning* notes, a different folder from the runtime
+`BowerBird/`.)
 
-Backlinks into the evergreen layer (`g/learning/`) are **proposed inside the
-clipping**, never written into those raw notes. `ingest._assert_writable`
-enforces this in code — keep it that way.
+## Model / provider — two tiers
 
-## Model / provider
+Synthesis is split by cost shape (decided 2026-06-24):
 
-First-party **Anthropic API**, model **`claude-haiku-4-5`** for all lanes —
-cheap (capture + one daily digest), token budget is not a concern here. The
-learned-lane synthesis can be bumped to `claude-sonnet-4-6` later if clippings
-read thin; per-lane model is a one-line config change. Structured output uses
-`messages.parse` with a pydantic model (`llm.ClippingPlan`).
+- **Tier 1 — per-item (this Python app):** first-party **Anthropic API**,
+  **`claude-haiku-4-5`**. The cron drain reading inbox/Telegram and writing
+  baseline `sources/` notes + links. Cheap, automatable. Structured output uses
+  `messages.parse` with a pydantic model (`llm.ClippingPlan`).
+- **Tier 2 — whole-graph (Claude Code, not this app):** the deep digest and
+  cross-corpus synthesis run on the **Max subscription** via Claude Code,
+  driven by `BowerBird/CLAUDE.md`. No API tokens; you-triggered (`make
+  digest`), never crond (subscription-in-cron is ToS-gray).
+
+Keep the Python path Haiku-only; do **not** route whole-graph synthesis through
+the API. Per-lane Tier-1 model is a one-line config change if a lane reads thin.
 
 ## Repo layout
 
 ```
 src/bower_bird/
-  config.py    env + vault paths + model (frozen Config)
-  state.py     telegram offset + url dedup (idempotency)
+  config.py    env + owned-folder (BowerBird/) paths + model (frozen Config)
+  state.py     telegram offset + url + clip-hash dedup (idempotency)
   telegram.py  getUpdates drain + send receipt
   router.py    two-lane classification (bare link vs link+note / read:)
   fetch.py     page metadata (title/description/excerpt)
   llm.py       Anthropic calls: describe_link, synthesize_clipping (pydantic)
-  ingest.py    vault writes (reading-list / Clippings), guarded
-  app.py       drain orchestration (one pass)
+  ingest.py    owned-folder writes (sources/notes/reading-list/_inbox), guarded
+  inbox.py     clipper inbox scan: clip -> source note + links -> archive
+  app.py       drain orchestration (Telegram queue + clipper inbox)
   __main__.py  `python -m bower_bird`
-tests/         router unit tests (pure logic, no network)
-notes/         symlink into the Obsidian vault (gitignored)
+tests/         router + ingest/inbox unit tests (pure logic, no network)
+scripts/       launchd install/uninstall, digest.sh (Claude Code Tier-2)
+notes/         symlink into the Obsidian vault — planning notes (gitignored)
 ```
+
+The Tier-2 synthesis playbook lives at `BowerBird/CLAUDE.md` inside the vault
+(loaded by Claude Code when run there), not in this repo.
 
 Data schemas are **pydantic models**; `Config`/`State` stay plain (plumbing, not
 contracts).

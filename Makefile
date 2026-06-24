@@ -6,7 +6,7 @@ KERNEL_DISPLAY := bower-bird (uv)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup sync hooks kernel lint format test drain schedule unschedule clean
+.PHONY: help setup sync hooks kernel lint format test drain digest schedule unschedule clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -36,8 +36,11 @@ test: ## Run unit tests (router + ingest/inbox)
 	uv run python tests/test_router.py
 	uv run python tests/test_ingest.py
 
-drain: ## Run one capture pass (Telegram queue + clipper inbox)
+drain: ## Run one capture pass (Telegram queue + clipper inbox) — Tier 1, Haiku
 	uv run python -m bower_bird
+
+digest: ## Generate the whole-graph digest via Claude Code — Tier 2, subscription
+	scripts/digest.sh
 
 schedule: ## Install launchd agent: daily drain at 08:00 (override: HOUR=, MINUTE=)
 	scripts/install-launchd.sh $(HOUR) $(MINUTE)
