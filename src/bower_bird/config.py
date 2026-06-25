@@ -116,6 +116,16 @@ class Config:
         """Processed clipper originals, moved here (never hard-deleted)."""
         return self.vault_path / "archive"
 
+    @property
+    def review_path(self) -> Path:
+        """Spaced-rep review state for peck — keyed by bower id.
+
+        Lives in the vault (not the repo) so it stays close to the bowers it
+        tracks and is not accidentally version-controlled. Distinct from the
+        repo-side state.json (which is idempotency-only).
+        """
+        return self.vault_path / "_review.json"
+
 
 def load_config() -> Config:
     load_dotenv(REPO_ROOT / ".env")

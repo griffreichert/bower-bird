@@ -22,6 +22,7 @@ from .config import Config
 from .fetch import PageMeta
 from .llm import ClippingPlan, FeynmanConcept
 from .marks import Marks
+from .review import ReviewStore
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
 _SKIP_NOTE_STEMS = {"_index", "_archive", "_template", "__init__"}
@@ -507,5 +508,12 @@ def mint_bower(
 
     # Assert the backlink from this bower to its source (additive, idempotent).
     _append_link(config, path, source_title)
+
+    # Seed the review store for newly minted bowers (idempotent — existing
+    # entries are left untouched). Persisted immediately so the vault file
+    # stays consistent even when the caller doesn't call save() separately.
+    store = ReviewStore.load(config)
+    if store.seed(bower_id):
+        store.save()
 
     return path, bower_id
