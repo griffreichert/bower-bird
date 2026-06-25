@@ -3,6 +3,7 @@
 Subcommands:
   (default)        Drain the Telegram queue once.
   peck             Run a spaced-rep quiz session over due bowers (pull-only).
+  forage           Gather gap signals and write forage.md proposals (pull-only).
 """
 
 from __future__ import annotations
@@ -29,6 +30,11 @@ def main() -> int:
         from .review import main as peck_main
 
         return peck_main(config)
+
+    if subcommand == "forage":
+        from .forage import main as forage_main
+
+        return forage_main(config)
 
     count = drain(config)
     if count:

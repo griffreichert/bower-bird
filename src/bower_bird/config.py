@@ -126,6 +126,16 @@ class Config:
         """
         return self.vault_path / "_review.json"
 
+    @property
+    def forage_path(self) -> Path:
+        """Gap-signal proposals written by the forage subcommand.
+
+        Propose-never-auto-fill: lists gap topics and search prompts only.
+        Nothing in inbox/ is ever written automatically — the human approves
+        items by hand. Pull-only; never written from the cron drain path.
+        """
+        return self.vault_path / "forage.md"
+
 
 def load_config() -> Config:
     load_dotenv(REPO_ROOT / ".env")
