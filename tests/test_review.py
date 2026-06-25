@@ -33,7 +33,7 @@ def _config(root: Path) -> Config:
         model="test",
         state_path=root / "state.json",
         fetch_timeout=15,
-        drain_limit=100,
+        queue_limit=100,
     )
 
 

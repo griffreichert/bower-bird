@@ -1,7 +1,7 @@
-"""Telegram Bot API: drain the queue with getUpdates, send receipts.
+"""Telegram Bot API: pull the queue with getUpdates, send receipts.
 
 No webhook, no public server. Telegram's own servers hold the queue (~24h)
-until we drain it from the laptop. getUpdates with a running offset is the
+until we pull it from the laptop. getUpdates with a running offset is the
 whole mechanism.
 """
 

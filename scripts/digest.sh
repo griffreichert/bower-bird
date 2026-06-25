@@ -4,7 +4,7 @@
 # This is the whole-graph synthesis pass — deliberately run by hand (or from a
 # session), NOT crond: driving the subscription from an unattended loop is a
 # ToS gray area and burns usage caps. The cheap automated work is the Tier-1
-# Haiku drain (`make drain`); this is the expensive, in-the-loop thinking.
+# Haiku pass (`make run`); this is the expensive, in-the-loop thinking.
 #
 # First run: do it interactively once (`cd <vault> && claude`) so you can grant
 # write permission to the folder; after that this wrapper is a one-shot.

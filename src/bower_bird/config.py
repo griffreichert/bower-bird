@@ -56,7 +56,7 @@ class Config:
     model: str
     state_path: Path
     fetch_timeout: float
-    drain_limit: int
+    queue_limit: int
 
     # --- Derived locations inside the owned folder (everything we touch) ---
     @property
@@ -69,7 +69,7 @@ class Config:
     def trinkets_dir(self) -> Path:
         """Read+annotated items awaiting arrangement into brain/bowers/.
         The move inbox/ → trinkets/ is the read signal that authorises graph
-        writes. The ingest/court scan reads from here, never from inbox/."""
+        writes. The ingest/gather scan reads from here, never from inbox/."""
         return self.vault_path / "trinkets"
 
     @property
@@ -132,7 +132,7 @@ class Config:
 
         Propose-never-auto-fill: lists gap topics and search prompts only.
         Nothing in inbox/ is ever written automatically — the human approves
-        items by hand. Pull-only; never written from the cron drain path.
+        items by hand. Pull-only; never written from the cron pass.
         """
         return self.vault_path / "forage.md"
 
@@ -168,5 +168,5 @@ def load_config() -> Config:
         model=os.environ.get("BOWER_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL,
         state_path=state_path,
         fetch_timeout=float(os.environ.get("BOWER_FETCH_TIMEOUT", "15")),
-        drain_limit=int(os.environ.get("BOWER_DRAIN_LIMIT", "100")),
+        queue_limit=int(os.environ.get("BOWER_QUEUE_LIMIT", "100")),
     )

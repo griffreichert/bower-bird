@@ -64,6 +64,13 @@ class ClippingPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    concise_title: str = Field(
+        description="A short, fluff-free title for this source — the graph node "
+        "label. Strip clickbait, subtitles, and '(And the N tricks...)' tails; "
+        "keep only the core subject, ideally 2-6 words (e.g. 'The Feynman "
+        "Method', not 'The Feynman Method: Why You Forget 90% of What You Read "
+        "(And the 4 Prompts That Fix It)'). Keep proper nouns intact."
+    )
     description: str = Field(
         description="One factual line: what this source is (type + topic)."
     )
@@ -173,6 +180,7 @@ def synthesize_clipping(
     if plan is None:
         # e.g. a refusal — fall back to a minimal, honest clipping.
         return ClippingPlan(
+            concise_title=meta.title,
             description=meta.title,
             topics=[],
             connection="",

@@ -32,7 +32,7 @@ def _config(root: Path) -> Config:
         model="test",
         state_path=root / "state.json",
         fetch_timeout=15,
-        drain_limit=100,
+        queue_limit=100,
     )
 
 
@@ -132,9 +132,13 @@ def test_create_source_note_asserts_links() -> None:
         root.mkdir()
         cfg = _config(root)
         meta = PageMeta(
-            url="https://x.co/p", title="Cool Post", description="", body_excerpt="body"
+            url="https://x.co/p",
+            title="Cool Post: The Very Long Clickbait Subtitle Edition",
+            description="",
+            body_excerpt="body",
         )
         plan = ClippingPlan(
+            concise_title="Cool Post",
             description="A blog post",
             topics=["Caching", "Cache Invalidation"],
             connection="both about caches",
@@ -146,6 +150,7 @@ def test_create_source_note_asserts_links() -> None:
             cfg, meta, plan, note="why it matters", marks=marks
         )
         check(path is not None and path.exists(), "source note written")
+        check(path.stem == "Cool Post", "concise title used for graph node, not raw")
         src = path.read_text(encoding="utf-8")
         has_links = "[[Caching]]" in src and "[[Cache Invalidation]]" in src
         check(has_links, "links in source")
@@ -184,6 +189,7 @@ def test_links_into_existing_nested_concept() -> None:
             url="https://x.co/v", title="RL Post", description="", body_excerpt="b"
         )
         plan = ClippingPlan(
+            concise_title="RL Post",
             description="post",
             topics=["Verifiers"],
             connection="",
