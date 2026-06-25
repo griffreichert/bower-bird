@@ -9,6 +9,9 @@ owned folder is `vault_path`. We locate it from the gitignored `notes/` symlink
 (notes/ -> G/g/projects/bower-bird): the Obsidian root (.../G) is three parents
 up from that target, and the owned folder is `<root>/BowerBird`. Override with
 BOWER_VAULT_PATH.
+
+Writable paths at runtime: inbox/, trinkets/, sources/, notes/ (brain/bowers/),
+archive/, to-clip.md, tools.md, _inbox.md, digests/.
 """
 
 from __future__ import annotations
@@ -58,18 +61,21 @@ class Config:
     # --- Derived locations inside the owned folder (everything we touch) ---
     @property
     def inbox_dir(self) -> Path:
-        """Where the Obsidian Web Clipper drops clips to be processed."""
+        """Reading room: bot fills it (rendered clips); humans read + annotate
+        here; nothing is auto-processed from this folder (INVARIANT)."""
         return self.vault_path / "inbox"
+
+    @property
+    def trinkets_dir(self) -> Path:
+        """Read+annotated items awaiting arrangement into brain/bowers/.
+        The move inbox/ → trinkets/ is the read signal that authorises graph
+        writes. The ingest/court scan reads from here, never from inbox/."""
+        return self.vault_path / "trinkets"
 
     @property
     def telegram_inbox_path(self) -> Path:
         """Catch-all log for Telegram messages we couldn't process."""
         return self.vault_path / "_inbox.md"
-
-    @property
-    def reading_list_path(self) -> Path:
-        """To-read queue: bare links, unread, metadata only (never distilled)."""
-        return self.vault_path / "reading-list.md"
 
     @property
     def to_clip_path(self) -> Path:
@@ -95,14 +101,14 @@ class Config:
 
     @property
     def notes_dir(self) -> Path:
-        """Concept-note root: brain/nests/. Notes live in topical subfolders
-        (nests), so callers recurse. New concepts land flat here until Tier-2
+        """Concept-note root: brain/bowers/. Notes live in topical subfolders
+        (bowers), so callers recurse. New concepts land flat here until Tier-2
         files them. Additive-only on human-authored notes (per INVARIANTS)."""
-        return self.brain_dir / "nests"
+        return self.brain_dir / "bowers"
 
     @property
     def topic_index_path(self) -> Path:
-        """The nest map, maintained by Tier-2 (Claude Code)."""
+        """The bower map, maintained by Tier-2 (Claude Code)."""
         return self.brain_dir / "_topic_index.md"
 
     @property
