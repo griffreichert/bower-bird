@@ -158,6 +158,97 @@ def append_to_reading_list(config: Config, url: str, title: str, oneline: str) -
 
 
 # --------------------------------------------------------------------------- #
+# clip queue (links httpx can't read — open in a browser + Web Clipper)
+# --------------------------------------------------------------------------- #
+
+_TO_CLIP_HEADER = """\
+---
+title: To clip
+created: {today}
+bower: generated
+tags:
+  - to-clip
+---
+# To clip
+
+Links bower-bird can't read on its own (X/Twitter, JS- or login-walled pages).
+Open each in a browser and save it with the Obsidian Web Clipper into `inbox/`;
+it'll be read + filed on the next drain. Check one off once you've clipped it.
+
+## Queue
+"""
+
+
+def append_to_clip_queue(config: Config, url: str, title: str = "") -> bool:
+    """Append a `- [ ]` clip-me entry. Returns False if the URL is already listed."""
+    path = config.to_clip_path
+    _assert_writable(config, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not path.exists():
+        path.write_text(_TO_CLIP_HEADER.format(today=_today()), encoding="utf-8")
+
+    existing = path.read_text(encoding="utf-8")
+    if url in existing:
+        return False
+
+    label = title.strip()
+    entry = f"- [ ] [{label}]({url})\n" if label and label != url else f"- [ ] {url}\n"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(entry)
+    return True
+
+
+# --------------------------------------------------------------------------- #
+# tools shelf (plugins/repos/tools to keep for later — not knowledge)
+# --------------------------------------------------------------------------- #
+
+_TOOLS_HEADER = """\
+---
+title: Tools
+created: {today}
+bower: generated
+tags:
+  - tools
+---
+# Tools
+
+A shelf of plugins, repos, and tools worth remembering — collected via the
+`tool:` Telegram prefix. Not knowledge (never enters brain/); this is "what was
+that thing I saw" recall. Search by your own words.
+
+## Shelf
+"""
+
+
+def append_to_tools(
+    config: Config, url: str, title: str, oneline: str, note: str = ""
+) -> bool:
+    """Append a tool entry. Returns False if the URL is already shelved.
+
+    `note` is the user's own words ("claude loop plugin") — kept first so recall
+    search hits their phrasing, not just the scraped title.
+    """
+    path = config.tools_path
+    _assert_writable(config, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not path.exists():
+        path.write_text(_TOOLS_HEADER.format(today=_today()), encoding="utf-8")
+
+    existing = path.read_text(encoding="utf-8")
+    if url in existing:
+        return False
+
+    label = title.strip() or url
+    desc = " · ".join(p for p in (note.strip(), oneline.strip()) if p)
+    entry = f"- [{label}]({url})" + (f" — {desc}\n" if desc else "\n")
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(entry)
+    return True
+
+
+# --------------------------------------------------------------------------- #
 # catch-all inbox (Telegram messages we couldn't process)
 # --------------------------------------------------------------------------- #
 

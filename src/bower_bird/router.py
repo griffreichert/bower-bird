@@ -1,12 +1,15 @@
-"""Two-lane router: tell the lanes apart by *how* the message was sent.
+"""Router: tell the lanes apart by *how* the message was sent.
 
 | Send                         | Lane     |
 | ---------------------------- | -------- |
+| `tool:` + link               | tool     |
 | bare link                    | to-read  |
 | link + my note, or `read:`   | learned  |
 
 The user's one-line "why" is the highest-value input, so anything beyond the
-bare URL (or the explicit `read:` prefix) routes to the learned lane.
+bare URL (or the explicit `read:` prefix) routes to the learned lane. An
+explicit `tool:` prefix overrides everything — it's a keep-for-later shelf
+item, not knowledge.
 """
 
 from __future__ import annotations
@@ -18,11 +21,13 @@ from pydantic import BaseModel, ConfigDict
 
 _URL_RE = re.compile(r"https?://\S+")
 _READ_PREFIX_RE = re.compile(r"^\s*read\s*:", re.IGNORECASE)
+_TOOL_PREFIX_RE = re.compile(r"^\s*tool\s*:", re.IGNORECASE)
 
 
 class Lane(StrEnum):
     TO_READ = "to_read"
     LEARNED = "learned"
+    TOOL = "tool"  # keep-for-later shelf (a plugin/repo/tool), not knowledge
     NO_LINK = "no_link"  # nothing to capture; skipped quietly
 
 
@@ -39,6 +44,17 @@ def _strip_trailing_punct(url: str) -> str:
 
 
 def parse(text: str) -> Parsed:
+    # `tool:` is an explicit override — a shelf item, never knowledge. A tool
+    # note without a link isn't useful to collect, so it falls back to NO_LINK.
+    if _TOOL_PREFIX_RE.match(text):
+        body = _TOOL_PREFIX_RE.sub("", text, count=1)
+        match = _URL_RE.search(body)
+        if not match:
+            return Parsed(lane=Lane.NO_LINK, url=None, note=text.strip())
+        url = _strip_trailing_punct(match.group(0))
+        note = (body[: match.start()] + body[match.end() :]).strip()
+        return Parsed(lane=Lane.TOOL, url=url, note=note)
+
     explicit_read = bool(_READ_PREFIX_RE.match(text))
     body = _READ_PREFIX_RE.sub("", text, count=1)
 

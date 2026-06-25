@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from . import inbox, ingest, telegram
 from .config import Config, load_config
-from .fetch import fetch
+from .fetch import fetch, needs_clipping
 from .llm import describe_link, synthesize_clipping
 from .router import Lane, parse
 from .state import State
@@ -31,9 +31,34 @@ def _handle(config: Config, state: State, text: str) -> str:
     if state.seen_url(url):
         return f"Already captured earlier: {url}"
 
-    meta = fetch(url, timeout=config.fetch_timeout)
+    if parsed.lane is Lane.TOOL:
+        # A keep-for-later shelf item. Repos/tool pages fetch fine over httpx.
+        meta = fetch(url, timeout=config.fetch_timeout)
+        oneline = describe_link(meta, model=config.model)
+        added = ingest.append_to_tools(
+            config, url, meta.title, oneline, note=parsed.note
+        )
+        state.mark_url(url)
+        if not added:
+            return f"Already on the tools shelf: {meta.title}"
+        return f"Saved to tools: {meta.title}\n— {parsed.note or oneline}"
 
     if parsed.lane is Lane.TO_READ:
+        # Known JS-walled domains can't be read over httpx — queue them for the
+        # browser Web Clipper without wasting a fetch.
+        if needs_clipping(url):
+            ingest.append_to_clip_queue(config, url)
+            state.mark_url(url)
+            return f"Can't read that one solo — queued to clip:\n{url}"
+
+        meta = fetch(url, timeout=config.fetch_timeout)
+        if meta.is_thin:
+            # Fetch came back empty (likely walled). Send it to the clip queue
+            # rather than the reading list, which needs a real label.
+            ingest.append_to_clip_queue(config, url, meta.title)
+            state.mark_url(url)
+            return f"Couldn't read that one — queued to clip:\n{url}"
+
         oneline = describe_link(meta, model=config.model)
         added = ingest.append_to_reading_list(config, url, meta.title, oneline)
         state.mark_url(url)
@@ -42,6 +67,7 @@ def _handle(config: Config, state: State, text: str) -> str:
         return f"Queued to read: {meta.title}\n— {oneline}"
 
     # Lane.LEARNED — the user has read it and added a note.
+    meta = fetch(url, timeout=config.fetch_timeout)
     candidates = ingest.list_concept_notes(config)
     plan = synthesize_clipping(meta, parsed.note, candidates, model=config.model)
     path = ingest.create_source_note(config, meta, plan, note=parsed.note)

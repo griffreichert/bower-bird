@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from bower_bird import inbox, ingest  # noqa: E402
 from bower_bird.config import Config  # noqa: E402
-from bower_bird.fetch import PageMeta  # noqa: E402
+from bower_bird.fetch import PageMeta, needs_clipping  # noqa: E402
 from bower_bird.llm import ClippingPlan  # noqa: E402
 from bower_bird.marks import Marks, extract_marks  # noqa: E402
 
@@ -92,6 +92,45 @@ def test_reading_list_and_inbox() -> None:
         ib = cfg.telegram_inbox_path.read_text(encoding="utf-8")
         check("random thought" in ib, "telegram inbox captured the message")
         check("(no link)" in ib, "telegram inbox recorded the reason")
+
+
+def test_clip_queue() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+
+        added = ingest.append_to_clip_queue(cfg, "https://x.com/a/status/1")
+        check(added is True, "first clip-queue add returns True")
+        dup = ingest.append_to_clip_queue(cfg, "https://x.com/a/status/1")
+        check(dup is False, "duplicate clip-queue URL returns False")
+        cq = cfg.to_clip_path.read_text(encoding="utf-8")
+        check(cq.count("https://x.com/a/status/1") == 1, "url listed once")
+        check("- [ ] https://x.com/a/status/1" in cq, "bare url checkbox when no title")
+
+        ingest.append_to_clip_queue(cfg, "https://x.com/b", title="A Tweet")
+        cq2 = cfg.to_clip_path.read_text(encoding="utf-8")
+        check("- [ ] [A Tweet](https://x.com/b)" in cq2, "titled checkbox entry")
+
+
+def test_tools_shelf() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+
+        url = "https://github.com/x/y"
+        added = ingest.append_to_tools(
+            cfg, url, "x/y", "A CLI tool", note="claude loop plugin"
+        )
+        check(added is True, "first tools add returns True")
+        dup = ingest.append_to_tools(cfg, url, "x/y", "A CLI tool")
+        check(dup is False, "duplicate tools URL returns False")
+        ts = cfg.tools_path.read_text(encoding="utf-8")
+        check(f"[x/y]({url})" in ts, "tool link stored")
+        check("claude loop plugin · A CLI tool" in ts, "user note first for recall")
+        # tools shelf never touches the knowledge layer
+        check(not cfg.brain_dir.exists(), "tools shelf does not create brain/")
 
 
 def test_create_source_note_asserts_links() -> None:
@@ -212,6 +251,20 @@ def test_dig_word_boundary() -> None:
     check(m.dig == [], "#digest / #digging do not trigger #dig")
 
 
+def test_fetch_helpers() -> None:
+    check(needs_clipping("https://x.com/a/status/1"), "x.com needs clipping")
+    check(needs_clipping("https://twitter.com/a"), "twitter.com needs clipping")
+    check(needs_clipping("https://mobile.twitter.com/a"), "subdomain needs clipping")
+    check(not needs_clipping("https://example.com/p"), "normal site fetches fine")
+    check(not needs_clipping("https://github.com/x/y"), "github fetches fine")
+
+    u = "https://q.co"
+    thin = PageMeta(url=u, title=u, description="", body_excerpt="")
+    check(thin.is_thin, "no title/desc is thin")
+    full = PageMeta(url=u, title="Real", description="", body_excerpt="")
+    check(not full.is_thin, "a real title is not thin")
+
+
 def test_conflict_files_skipped() -> None:
     check(not inbox._is_processable(Path("note (conflicted copy).md")), "skip conflict")
     check(not inbox._is_processable(Path(".hidden.md")), "skip dotfile")
@@ -222,11 +275,14 @@ def main() -> int:
     test_assert_writable()
     test_append_link_additive_and_idempotent()
     test_reading_list_and_inbox()
+    test_clip_queue()
+    test_tools_shelf()
     test_create_source_note_asserts_links()
     test_links_into_existing_nested_concept()
     test_parse_clip()
     test_extract_marks()
     test_dig_word_boundary()
+    test_fetch_helpers()
     test_conflict_files_skipped()
     if _failures:
         print(f"\n{_failures} failure(s).")

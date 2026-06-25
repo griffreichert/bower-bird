@@ -72,6 +72,18 @@ class Config:
         return self.vault_path / "reading-list.md"
 
     @property
+    def to_clip_path(self) -> Path:
+        """Clip queue: links httpx can't read (X/Twitter, JS-walled). Open each
+        in a browser, Web Clipper into inbox/, then it gets read + processed."""
+        return self.vault_path / "to-clip.md"
+
+    @property
+    def tools_path(self) -> Path:
+        """Keep-for-later shelf: plugins/repos/tools collected via `tool:`. Not
+        knowledge — never enters brain/."""
+        return self.vault_path / "tools.md"
+
+    @property
     def brain_dir(self) -> Path:
         """The knowledge layer: distilled nests + raw sources + topic index."""
         return self.vault_path / "brain"
