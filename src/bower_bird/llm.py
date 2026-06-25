@@ -23,7 +23,40 @@ from .fetch import PageMeta
 # Haiku 4.5 does not take `thinking`/`effort` params — omit them. Small caps:
 # these are one-liners and short JSON, not essays.
 _DESCRIBE_MAX_TOKENS = 120
-_CLIPPING_MAX_TOKENS = 700
+_CLIPPING_MAX_TOKENS = 1200
+
+
+class FeynmanConcept(BaseModel):
+    """Gradeable Feynman payload for one load-bearing concept in a source.
+
+    The handle is a short reusable noun phrase that becomes the bower's title.
+    The test_question + model_answer pair is the quiz scaffold for `peck`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    handle: str = Field(
+        description="2-5 word noun phrase — the reusable concept title. NOT a "
+        "sentence or claim (e.g. 'Retrieval-augmented generation', not 'RAG is "
+        "useful'). Must match a topic in the outer topics list."
+    )
+    definition: str = Field(
+        description="One plain sentence: what this concept IS. No jargon, no "
+        "hedging — state it flatly."
+    )
+    why: str = Field(
+        description="One line: why this concept matters — the practical payoff or "
+        "insight the reader gains."
+    )
+    test_question: str = Field(
+        description="A question that proves understanding of this concept. "
+        "Answering it correctly requires genuine grasp, not recall."
+    )
+    model_answer: str = Field(
+        description="A model answer written at the level of a thoughtful "
+        "12-year-old — clear, concrete, no jargon. This is the grading target "
+        "for `peck` (the quiz loop)."
+    )
 
 
 class ClippingPlan(BaseModel):
@@ -46,6 +79,13 @@ class ClippingPlan(BaseModel):
     connection: str = Field(
         description="One line on how these topics connect through this source — "
         "the pointer, not a summary."
+    )
+    concepts: list[FeynmanConcept] = Field(
+        default_factory=list,
+        description="Feynman payload for the LOAD-BEARING concepts only — the "
+        "1-3 ideas this source most clearly illuminates. Skip minor topics. "
+        "Each handle MUST appear in the topics list. [] if highlights are thin "
+        "or no concept is clear enough to quiz on.",
     )
 
 
@@ -110,6 +150,12 @@ def synthesize_clipping(
         "handle (a 2-5 word noun phrase many sources could link to, e.g. "
         "'Agentic loops'), NOT a sentence or claim, NOT the source title. Give "
         "pointers (what connects to what and why), never a summary.\n\n"
+        "Also provide a Feynman payload for the 1-3 LOAD-BEARING concepts only "
+        "(the ideas this source most sharply illuminates — skip minor ones). "
+        "Each concept needs: handle (must match a topic above), a 1-line plain "
+        "definition, a 1-line why-it-matters, a test question that requires real "
+        "grasp, and a model answer at the level of a thoughtful 12-year-old. "
+        "Skip concepts where the source is too thin to support a graded answer.\n\n"
         f"Source URL: {meta.url}\n"
         f"Source title: {meta.title}\n"
         f"My note (why it matters): {note or '(none)'}\n"
@@ -130,5 +176,6 @@ def synthesize_clipping(
             description=meta.title,
             topics=[],
             connection="",
+            concepts=[],
         )
     return plan

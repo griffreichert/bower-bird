@@ -14,12 +14,13 @@ clobbered.
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 from .config import Config
 from .fetch import PageMeta
-from .llm import ClippingPlan
+from .llm import ClippingPlan, FeynmanConcept
 from .marks import Marks
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
@@ -336,3 +337,120 @@ def create_source_note(
         _append_link(config, find_concept_path(config, target), source_title)
 
     return path
+
+
+# --------------------------------------------------------------------------- #
+# bower minting (court: trinkets/ → brain/bowers/ with Feynman payload)
+# --------------------------------------------------------------------------- #
+
+_ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
+_FM_CLOSE = re.compile(r"^---\s*$", re.MULTILINE)
+_CONCEPT_SECTION_RE = re.compile(
+    r"<!-- bower:concept -->\n.*?<!-- /bower:concept -->", re.DOTALL
+)
+
+_BOWER_FRONTMATTER = """\
+---
+title: "{title}"
+id: {bower_id}
+created: {today}
+bower: generated
+tags:
+  - concept
+---
+# {title}
+"""
+
+_CONCEPT_SECTION = """\
+<!-- bower:concept -->
+## Concept
+
+**Definition:** {definition}
+
+**Why it matters:** {why}
+
+**Test question:** {test_question}
+
+**Model answer:** {model_answer}
+<!-- /bower:concept -->"""
+
+
+def _extract_bower_id(text: str) -> str | None:
+    """Pull the `id:` value from existing frontmatter, or None if absent."""
+    m = _ID_RE.search(text)
+    return m.group(1).strip() if m else None
+
+
+def _inject_id_into_frontmatter(text: str, bower_id: str) -> str:
+    """Append `id: <bower_id>` as the first line inside the frontmatter block.
+
+    Called only when the file exists but has no `id:` yet (append-once).
+    Leaves all other frontmatter + body untouched.
+    """
+    # Find the opening --- and inject after it.
+    if not text.startswith("---"):
+        return text  # no frontmatter — leave as-is; id will be added on next full write
+    first_newline = text.index("\n")
+    return text[: first_newline + 1] + f"id: {bower_id}\n" + text[first_newline + 1 :]
+
+
+def _write_concept_section(text: str, concept: FeynmanConcept) -> str:
+    """Replace the machine-managed concept block, or append it if absent.
+
+    Human-authored prose outside the <!-- bower:concept --> sentinel is
+    never touched. The sentinel block is bot-managed (rewrite-by-layer policy).
+    """
+    block = _CONCEPT_SECTION.format(
+        definition=concept.definition,
+        why=concept.why,
+        test_question=concept.test_question,
+        model_answer=concept.model_answer,
+    )
+    if _CONCEPT_SECTION_RE.search(text):
+        return _CONCEPT_SECTION_RE.sub(block, text)
+    # No existing block — append (before any trailing newline for tidiness)
+    sep = "" if text.endswith("\n") else "\n"
+    return f"{text}{sep}\n{block}\n"
+
+
+def mint_bower(
+    config: Config,
+    concept: FeynmanConcept,
+    source_title: str,
+) -> tuple[Path, str]:
+    """Create or update a bower note in brain/bowers/ carrying a Feynman payload.
+
+    Additive on human-authored prose — only the sentinel ``<!-- bower:concept
+    -->`` block and the Links section are bot-managed. The ``id:`` frontmatter
+    key is append-once (immutable after first write).
+
+    Returns ``(path, bower_id)`` — the note path and its stable id.
+    """
+    path = find_concept_path(config, concept.handle)
+    _assert_writable(config, path)
+
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        bower_id = _extract_bower_id(text)
+        if bower_id is None:
+            # Existing note has no id yet — inject one (append-once).
+            bower_id = str(uuid.uuid4())
+            text = _inject_id_into_frontmatter(text, bower_id)
+        # Update the machine-managed concept block; leave everything else alone.
+        text = _write_concept_section(text, concept)
+    else:
+        bower_id = str(uuid.uuid4())
+        text = _BOWER_FRONTMATTER.format(
+            title=concept.handle,
+            bower_id=bower_id,
+            today=_today(),
+        )
+        text = _write_concept_section(text, concept)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+    # Assert the backlink from this bower to its source (additive, idempotent).
+    _append_link(config, path, source_title)
+
+    return path, bower_id
