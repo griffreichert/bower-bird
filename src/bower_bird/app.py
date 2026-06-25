@@ -1,7 +1,7 @@
-"""Drain orchestration: one pass over both capture lanes.
+"""Run orchestration: one pass over both capture lanes.
 
 Capture is instant; processing waits until the laptop is awake. Each
-invocation (a) drains the Telegram queue, and (b) processes any Web Clipper
+invocation (a) pulls the Telegram queue, and (b) processes any Web Clipper
 drops in the inbox, routing every item and writing into the owned `BowerBird/`
 folder. Run it from a launchd job (e.g. daily) or by hand. Designed to finish
 within the current session — no long-poll loop.
@@ -79,26 +79,34 @@ def _handle(config: Config, state: State, text: str) -> str:
     return f"Filed: {meta.title}\nLinked: {links}"
 
 
-def drain(config: Config | None = None) -> int:
-    """Run one pass over both lanes. Returns total items processed."""
+def run_telegram(config: Config | None = None) -> int:
+    """Pull the Telegram queue once (links → inbox/). Returns items processed."""
     config = config or load_config()
     state = State.load(config.state_path)
+    return _pull_telegram(config, state)
 
-    processed = _drain_telegram(config, state)
 
+def run_gather(config: Config | None = None) -> int:
+    """Gather read+annotated trinkets/ → brain/bowers/. Returns items processed."""
+    config = config or load_config()
+    state = State.load(config.state_path)
     clip_log = inbox.process_inbox(config, state)
     for line in clip_log:
         print(f"  clip: {line}")
-    processed += len(clip_log)
-
-    return processed
+    return len(clip_log)
 
 
-def _drain_telegram(config: Config, state: State) -> int:
+def run_all(config: Config | None = None) -> int:
+    """One full pass: Telegram queue + trinkets gather. Total items processed."""
+    config = config or load_config()
+    return run_telegram(config) + run_gather(config)
+
+
+def _pull_telegram(config: Config, state: State) -> int:
     updates = telegram.get_updates(
         config.telegram_bot_token,
         offset=state.telegram_offset,
-        limit=config.drain_limit,
+        limit=config.queue_limit,
         timeout=config.fetch_timeout,
     )
 
@@ -106,7 +114,7 @@ def _drain_telegram(config: Config, state: State) -> int:
     for update in sorted(updates, key=lambda u: u.update_id):
         try:
             receipt = _handle(config, state, update.text)
-        except Exception as exc:  # noqa: BLE001 — report, don't crash the drain
+        except Exception as exc:  # noqa: BLE001 — report, don't crash the run
             receipt = f"Couldn't process that one: {exc}"
 
         try:

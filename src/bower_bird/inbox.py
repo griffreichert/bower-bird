@@ -1,4 +1,4 @@
-"""Trinkets court: process read+annotated clips in `BowerBird/trinkets/`.
+"""Trinkets gather: process read+annotated clips in `BowerBird/trinkets/`.
 
 The move inbox/ → trinkets/ is the read signal (per INVARIANTS). Clips land in
 inbox/ as the to-read reading room; the human reads + annotates them there, then
@@ -67,12 +67,15 @@ def _clip_to_meta(path: Path, fm: dict[str, str], body: str) -> PageMeta:
     )
 
 
-def _archive(config: Config, path: Path) -> None:
+def _archive(config: Config, path: Path, new_stem: str | None = None) -> None:
     config.archive_dir.mkdir(parents=True, exist_ok=True)
-    dest = config.archive_dir / path.name
+    # The cold copy can carry the concise (fluff-free) name once we have one;
+    # content is untouched, only the filename shortens.
+    stem = ingest._safe_filename(new_stem) if new_stem else path.stem
+    dest = config.archive_dir / f"{stem}{path.suffix}"
     if dest.exists():
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        dest = config.archive_dir / f"{path.stem}.{stamp}{path.suffix}"
+        dest = config.archive_dir / f"{stem}.{stamp}{path.suffix}"
     ingest._assert_writable(config, dest)
     shutil.move(str(path), str(dest))
 
@@ -115,9 +118,13 @@ def process_inbox(config: Config, state: State) -> list[str]:
             log.append(f"error {path.name}: {exc}")
             continue
 
-        # Mint bowers for load-bearing concepts (court step).
+        # Concise (fluff-free) title threads through bower refs + the archive
+        # name so the graph node, its backlinks, and the cold copy all match.
+        display_title = (plan.concise_title or meta.title).strip() or meta.title
+
+        # Mint bowers for load-bearing concepts (gather step).
         bower_ids: list[str] = []
-        source_title = ingest._safe_filename(meta.title)
+        source_title = ingest._safe_filename(display_title)
         for concept in plan.concepts:
             _, bower_id = ingest.mint_bower(config, concept, source_title)
             bower_ids.append(f"{concept.handle}:{bower_id[:8]}")
@@ -126,7 +133,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
         if meta.url:
             state.mark_url(meta.url)
         state.save()
-        _archive(config, path)
+        _archive(config, path, new_stem=display_title)
 
         if note_path is None:
             log.append(f"{path.name}: source note already existed; archived")

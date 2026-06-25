@@ -12,6 +12,8 @@ dependencies = [
 
 [project.scripts]
 bower-bird = "bower_bird.__main__:main"
+bower_bird = "bower_bird.__main__:main"
+bb = "bower_bird.__main__:main"
 
 [dependency-groups]
 dev = [

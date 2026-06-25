@@ -18,7 +18,7 @@ Gap signals gathered:
 Nothing is written into ``inbox/``. Approval is an explicit human step.
 Quiet by default: if no gaps are found, prints a one-liner and exits.
 
-Pull-only: never called from the cron drain path.
+Pull-only: never called from the cron pass.
 """
 
 from __future__ import annotations

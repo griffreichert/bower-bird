@@ -1,7 +1,7 @@
 """bower-bird: the research-profile capture loop.
 
 A quiet knowledge-collation loop. Send a link to a Telegram bot; the laptop
-drains it when awake, routes it down one of several lanes, and writes to the vault:
+pulls it when awake, routes it down one of several lanes, and writes to the vault:
 
 - bare link        -> to-read   -> fetch + render -> readable .md in inbox/
 - link + a note    -> learned   -> create a clipping + propose [[backlinks]]

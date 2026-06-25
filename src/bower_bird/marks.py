@@ -12,7 +12,7 @@ all optional, all extracted from the clip's markdown body:
   fold into the same question.
 - ``[anchor](url)``  — outbound links the article references → leads to capture.
 
-Pure text logic — no network, no vault writes. The Tier-1 drain lifts these into
+Pure text logic — no network, no vault writes. The Tier-1 pass lifts these into
 the source note; Tier-2 grows highlights into nest concepts and routes
 dig/questions into the digest's gaps & next-reads.
 """

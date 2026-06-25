@@ -9,7 +9,7 @@ Leitner ladder: [1, 3, 7, 16, 35, 75] days.
   - weak    → stay (box unchanged),           due = today + ladder[box]
   - wrong   → box 0,                          due = today + ladder[0]
 
-``peck`` is pull-only: it is never called from the drain / cron path.
+``peck`` is pull-only: it is never called from the cron pass.
 """
 
 from __future__ import annotations

@@ -133,7 +133,7 @@ tags:
 
 Links bower-bird can't read on its own (X/Twitter, JS- or login-walled pages).
 Open each in a browser and save it with the Obsidian Web Clipper into `inbox/`;
-it'll be read + filed on the next drain. Check one off once you've clipped it.
+it'll be read + filed on the next pass. Check one off once you've clipped it.
 
 ## Queue
 """
@@ -343,7 +343,10 @@ def create_source_note(
     """
     marks = marks or Marks()
     config.sources_dir.mkdir(parents=True, exist_ok=True)
-    source_title = _safe_filename(meta.title)
+    # Prefer the model's fluff-free title for the graph node; fall back to the
+    # raw page title if the model gave nothing.
+    display_title = (plan.concise_title or meta.title).strip() or meta.title
+    source_title = _safe_filename(display_title)
     path = config.sources_dir / f"{source_title}.md"
     _assert_writable(config, path)
     if path.exists():
@@ -359,7 +362,7 @@ def create_source_note(
 
     parts = [
         _SOURCE_FRONTMATTER.format(
-            title=meta.title.replace('"', "'"),
+            title=display_title.replace('"', "'"),
             url=meta.url,
             today=_today(),
             description=plan.description.replace('"', "'"),
@@ -396,7 +399,7 @@ def create_source_note(
 
 
 # --------------------------------------------------------------------------- #
-# bower minting (court: trinkets/ → brain/bowers/ with Feynman payload)
+# bower minting (gather: trinkets/ → brain/bowers/ with Feynman payload)
 # --------------------------------------------------------------------------- #
 
 _ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
