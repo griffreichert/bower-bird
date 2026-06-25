@@ -115,6 +115,13 @@ def process_inbox(config: Config, state: State) -> list[str]:
             log.append(f"error {path.name}: {exc}")
             continue
 
+        # Mint bowers for load-bearing concepts (court step).
+        bower_ids: list[str] = []
+        source_title = ingest._safe_filename(meta.title)
+        for concept in plan.concepts:
+            _, bower_id = ingest.mint_bower(config, concept, source_title)
+            bower_ids.append(f"{concept.handle}:{bower_id[:8]}")
+
         state.mark_hash(digest)
         if meta.url:
             state.mark_url(meta.url)
@@ -129,9 +136,10 @@ def process_inbox(config: Config, state: State) -> list[str]:
                 f"{len(marks.highlights)}h/{len(marks.dig)}d/"
                 f"{len(marks.questions)}q/{len(marks.further_links)}l"
             )
+            bowers = ("; bowers: " + ", ".join(bower_ids)) if bower_ids else ""
             log.append(
                 f"{path.name} -> sources/{note_path.name} "
-                f"(links: {links}; marks: {marked})"
+                f"(links: {links}; marks: {marked}{bowers})"
             )
 
     return log
