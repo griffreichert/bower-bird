@@ -1,10 +1,13 @@
-"""Clipper inbox: process Obsidian Web Clipper drops in `BowerBird/inbox/`.
+"""Trinkets court: process read+annotated clips in `BowerBird/trinkets/`.
 
-A Web Clipper save is a deliberate "I read / care about this" signal (per
-INVARIANTS), so clips are processed into the graph immediately. The clipper
-already wrote clean markdown — so we skip `fetch.py` entirely and synthesise
-from the clip body, which sidesteps the scraper's failure on JS-heavy /
-login-walled pages (e.g. X).
+The move inbox/ → trinkets/ is the read signal (per INVARIANTS). Clips land in
+inbox/ as the to-read reading room; the human reads + annotates them there, then
+moves them to trinkets/ — that move authorises graph writes. The bot never
+auto-processes inbox/.
+
+The clipper already wrote clean markdown — so we skip `fetch.py` entirely and
+synthesise from the clip body, which sidesteps the scraper's failure on
+JS-heavy / login-walled pages (e.g. X).
 
 Per clip: parse frontmatter + body, dedup by content hash (state lives in the
 repo, so it survives the move), synthesise a source note + asserted links, then
@@ -75,12 +78,16 @@ def _archive(config: Config, path: Path) -> None:
 
 
 def process_inbox(config: Config, state: State) -> list[str]:
-    """Process every clip in the inbox once. Returns one log line per clip."""
-    if not config.inbox_dir.is_dir():
+    """Process every clip in trinkets/ once. Returns one log line per clip.
+
+    Scans trinkets/ (read+annotated items), never inbox/ (the reading room).
+    The move inbox/ → trinkets/ is the human read signal.
+    """
+    if not config.trinkets_dir.is_dir():
         return []
 
     log: list[str] = []
-    for path in sorted(config.inbox_dir.glob("*.md")):
+    for path in sorted(config.trinkets_dir.glob("*.md")):
         if not _is_processable(path):
             continue
         try:

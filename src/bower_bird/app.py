@@ -53,18 +53,17 @@ def _handle(config: Config, state: State, text: str) -> str:
 
         meta = fetch(url, timeout=config.fetch_timeout)
         if meta.is_thin:
-            # Fetch came back empty (likely walled). Send it to the clip queue
-            # rather than the reading list, which needs a real label.
+            # Fetch came back empty (likely walled). Send it to the clip queue.
             ingest.append_to_clip_queue(config, url, meta.title)
             state.mark_url(url)
             return f"Couldn't read that one — queued to clip:\n{url}"
 
-        oneline = describe_link(meta, model=config.model)
-        added = ingest.append_to_reading_list(config, url, meta.title, oneline)
+        # reading-list.md retired (slice #1 prefactor). Bare-link → inbox/
+        # rendering is wired in a later slice. Park in _inbox.md for now so
+        # nothing is lost (per INVARIANTS: nothing dropped silently).
+        ingest.append_to_telegram_inbox(config, url, reason="to-read (inbox pending)")
         state.mark_url(url)
-        if not added:
-            return f"Already in the reading list: {meta.title}"
-        return f"Queued to read: {meta.title}\n— {oneline}"
+        return f"Noted (to-read inbox coming soon): {meta.title or url}"
 
     # Lane.LEARNED — the user has read it and added a note.
     meta = fetch(url, timeout=config.fetch_timeout)

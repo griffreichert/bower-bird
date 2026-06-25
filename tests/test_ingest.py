@@ -75,18 +75,11 @@ def test_append_link_additive_and_idempotent() -> None:
         check(text2.count("- [[Some Source]]") == 1, "append is idempotent")
 
 
-def test_reading_list_and_inbox() -> None:
+def test_telegram_inbox() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "BowerBird"
         root.mkdir()
         cfg = _config(root)
-
-        added = ingest.append_to_reading_list(cfg, "https://a.co", "A", "what is a")
-        check(added is True, "first reading-list add returns True")
-        dup = ingest.append_to_reading_list(cfg, "https://a.co", "A", "what is a")
-        check(dup is False, "duplicate reading-list URL returns False")
-        rl = cfg.reading_list_path.read_text(encoding="utf-8")
-        check(rl.count("https://a.co") == 1, "url listed once")
 
         ingest.append_to_telegram_inbox(cfg, "random thought", reason="no link")
         ib = cfg.telegram_inbox_path.read_text(encoding="utf-8")
@@ -274,7 +267,7 @@ def test_conflict_files_skipped() -> None:
 def main() -> int:
     test_assert_writable()
     test_append_link_additive_and_idempotent()
-    test_reading_list_and_inbox()
+    test_telegram_inbox()
     test_clip_queue()
     test_tools_shelf()
     test_create_source_note_asserts_links()

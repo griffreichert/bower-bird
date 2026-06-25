@@ -5,9 +5,9 @@ Hard boundary (per INVARIANTS): bower-bird owns the `BowerBird/` folder
 that in code so a future change can't quietly break it.
 
 Additive-autonomous: bower-bird creates its own notes (sources/, new concept
-notes) and asserts `[[links]]` freely, but it **never rewrites or deletes an
-existing note**. Every write here is either a brand-new file or a strictly
-additive append (`_append_link`) — so nothing a human authored is ever
+notes in brain/bowers/) and asserts `[[links]]` freely, but it **never rewrites
+or deletes an existing note**. Every write here is either a brand-new file or a
+strictly additive append (`_append_link`) — so nothing a human authored is ever
 clobbered.
 """
 
@@ -49,9 +49,9 @@ def _today() -> str:
 
 
 def list_concept_notes(config: Config) -> list[str]:
-    """Concept-note titles across all nests — candidates for backlinks.
+    """Concept-note titles across all bowers — candidates for backlinks.
 
-    Recurses brain/nests/ since concepts live in topical subfolders.
+    Recurses brain/bowers/ since concepts live in topical subfolders.
     """
     if not config.notes_dir.is_dir():
         return []
@@ -66,10 +66,10 @@ def list_concept_notes(config: Config) -> list[str]:
 def find_concept_path(config: Config, title: str) -> Path:
     """Resolve a concept note's real path.
 
-    If a note with this title already exists anywhere under brain/nests/, return
+    If a note with this title already exists anywhere under brain/bowers/, return
     its actual (possibly nested) path so we link into it rather than creating a
-    flat duplicate. Otherwise return the flat path at the nests root, where new,
-    unfiled concepts land until Tier-2 files them into a nest.
+    flat duplicate. Otherwise return the flat path at the bowers root, where new,
+    unfiled concepts land until Tier-2 files them into a bower.
     """
     safe = _safe_filename(title)
     if config.notes_dir.is_dir():
@@ -113,48 +113,6 @@ def _append_link(config: Config, path: Path, target_title: str) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(out, encoding="utf-8")
-
-
-# --------------------------------------------------------------------------- #
-# to-read lane (bare links — unread, metadata only)
-# --------------------------------------------------------------------------- #
-
-_READING_LIST_HEADER = """\
----
-title: Reading list
-created: {today}
-bower: generated
-tags:
-  - reading-list
----
-# Reading list
-
-Unread links captured by bower-bird. Check one off when read, then it can be
-promoted to a source note.
-
-#type/reference #domain/personal #status/active
-
-## Queue
-"""
-
-
-def append_to_reading_list(config: Config, url: str, title: str, oneline: str) -> bool:
-    """Append a `- [ ]` entry. Returns False if the URL is already listed."""
-    path = config.reading_list_path
-    _assert_writable(config, path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    if not path.exists():
-        path.write_text(_READING_LIST_HEADER.format(today=_today()), encoding="utf-8")
-
-    existing = path.read_text(encoding="utf-8")
-    if url in existing:
-        return False
-
-    entry = f"- [ ] [{title}]({url}) — {oneline}\n"
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(entry)
-    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -372,7 +330,7 @@ def create_source_note(
     path.write_text("\n".join(parts), encoding="utf-8")
 
     # Assert reciprocal links into the concept graph (additive only). Link into
-    # an existing nested concept where it lives; new ones land flat at the nests
+    # an existing bower concept where it lives; new ones land flat at the bowers
     # root for Tier-2 to file.
     for target in targets:
         _append_link(config, find_concept_path(config, target), source_title)
