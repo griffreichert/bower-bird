@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from . import inbox, ingest, telegram
 from .config import Config, load_config
-from .fetch import fetch, needs_clipping
+from .fetch import fetch, fetch_rendered, needs_clipping
 from .llm import describe_link, synthesize_clipping
 from .router import Lane, parse
 from .state import State
@@ -51,19 +51,20 @@ def _handle(config: Config, state: State, text: str) -> str:
             state.mark_url(url)
             return f"Can't read that one solo — queued to clip:\n{url}"
 
-        meta = fetch(url, timeout=config.fetch_timeout)
+        meta, body = fetch_rendered(url, timeout=config.fetch_timeout)
         if meta.is_thin:
             # Fetch came back empty (likely walled). Send it to the clip queue.
             ingest.append_to_clip_queue(config, url, meta.title)
             state.mark_url(url)
             return f"Couldn't read that one — queued to clip:\n{url}"
 
-        # reading-list.md retired (slice #1 prefactor). Bare-link → inbox/
-        # rendering is wired in a later slice. Park in _inbox.md for now so
-        # nothing is lost (per INVARIANTS: nothing dropped silently).
-        ingest.append_to_telegram_inbox(config, url, reason="to-read (inbox pending)")
+        # Bare link → rendered readable doc in inbox/. The human reads + marks
+        # it there; moving it to trinkets/ is the read signal for further processing.
+        path = ingest.write_inbox_doc(config, meta, body)
         state.mark_url(url)
-        return f"Noted (to-read inbox coming soon): {meta.title or url}"
+        if path is None:
+            return f"Already in inbox: {meta.title}"
+        return f"Added to inbox: {meta.title}"
 
     # Lane.LEARNED — the user has read it and added a note.
     meta = fetch(url, timeout=config.fetch_timeout)

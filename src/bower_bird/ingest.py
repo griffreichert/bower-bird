@@ -207,6 +207,61 @@ def append_to_tools(
 
 
 # --------------------------------------------------------------------------- #
+# inbox fill (bot-rendered readable docs for the to-read lane)
+# --------------------------------------------------------------------------- #
+
+_INBOX_DOC_TEMPLATE = """\
+---
+title: "{title}"
+source: "{url}"
+created: {today}
+bower: bot-rendered
+tags:
+  - to-read
+---
+# {title}
+
+> Source: [{url}]({url})
+
+{body}
+"""
+
+
+def write_inbox_doc(config: Config, meta: PageMeta, body: str) -> Path | None:
+    """Write a rendered readable doc into inbox/.
+
+    The bot fills inbox/ with fetch-rendered .md files so the human can read
+    + annotate directly in Obsidian. Returns the path written, or None if a
+    doc for this URL already exists (filename-level guard; primary dedup is
+    url dedup in state).
+
+    `body` is the paragraph-structured body text from fetch.fetch_rendered().
+    The doc is NOT a summary — it is the full fetched text rendered for reading.
+    """
+    config.inbox_dir.mkdir(parents=True, exist_ok=True)
+    safe = _safe_filename(meta.title)
+    path = config.inbox_dir / f"{safe}.md"
+    _assert_writable(config, path)
+
+    if path.exists():
+        return None
+
+    body_block = (
+        body.strip()
+        if body.strip()
+        else "_Unable to extract body text — open in browser to read._"
+    )
+    content = _INBOX_DOC_TEMPLATE.format(
+        title=meta.title.replace('"', "'"),
+        url=meta.url,
+        today=_today(),
+        body=body_block,
+    )
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+# --------------------------------------------------------------------------- #
 # catch-all inbox (Telegram messages we couldn't process)
 # --------------------------------------------------------------------------- #
 
