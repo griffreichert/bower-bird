@@ -264,6 +264,77 @@ def test_conflict_files_skipped() -> None:
     check(inbox._is_processable(Path("normal.md")), "process normal file")
 
 
+def test_write_inbox_doc() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        meta = PageMeta(
+            url="https://example.com/article",
+            title="An Interesting Article",
+            description="about something",
+            body_excerpt="body text here",
+        )
+        body = "First paragraph of the article.\n\nSecond paragraph with more detail."
+
+        path = ingest.write_inbox_doc(cfg, meta, body)
+        check(path is not None, "write_inbox_doc returns a path")
+        assert path is not None
+        check(path.exists(), "inbox doc written to disk")
+        check(str(path).startswith(str(cfg.inbox_dir)), "path is inside inbox_dir")
+
+        text = path.read_text(encoding="utf-8")
+        check("# An Interesting Article" in text, "title as heading")
+        check("https://example.com/article" in text, "source url in doc")
+        check("First paragraph" in text, "body text included")
+        check("Second paragraph" in text, "second paragraph included")
+        check("to-read" in text, "tagged as to-read")
+        check("bot-rendered" in text, "bot-rendered tag in frontmatter")
+
+        # idempotent: second call for same title returns None
+        dup = ingest.write_inbox_doc(cfg, meta, body)
+        check(dup is None, "write_inbox_doc is idempotent on same title")
+
+
+def test_write_inbox_doc_empty_body() -> None:
+    """An empty body (failed extraction) still produces a readable stub."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        meta = PageMeta(
+            url="https://example.com/stub",
+            title="Stub Page",
+            description="",
+            body_excerpt="",
+        )
+        path = ingest.write_inbox_doc(cfg, meta, "")
+        check(path is not None and path.exists(), "stub doc written")
+        assert path is not None
+        text = path.read_text(encoding="utf-8")
+        check("open in browser" in text.lower(), "empty body fallback message present")
+
+
+def test_write_inbox_doc_stays_in_inbox_boundary() -> None:
+    """write_inbox_doc refuses paths outside inbox/ (enforced via _assert_writable)."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        meta = PageMeta(
+            url="https://example.com/safe",
+            title="Safe",
+            description="",
+            body_excerpt="",
+        )
+        path = ingest.write_inbox_doc(cfg, meta, "body")
+        # The written path must be inside the vault root
+        check(
+            path is not None and root in path.parents,
+            "inbox doc path stays inside vault_path",
+        )
+
+
 def main() -> int:
     test_assert_writable()
     test_append_link_additive_and_idempotent()
@@ -277,6 +348,9 @@ def main() -> int:
     test_dig_word_boundary()
     test_fetch_helpers()
     test_conflict_files_skipped()
+    test_write_inbox_doc()
+    test_write_inbox_doc_empty_body()
+    test_write_inbox_doc_stays_in_inbox_boundary()
     if _failures:
         print(f"\n{_failures} failure(s).")
         return 1
