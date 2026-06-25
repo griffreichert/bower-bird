@@ -42,8 +42,8 @@ drain: ## Run one capture pass (Telegram queue + clipper inbox) — Tier 1, Haik
 digest: ## Generate the whole-graph digest via Claude Code — Tier 2, subscription
 	scripts/digest.sh
 
-schedule: ## Install launchd agent: daily drain at 08:00 (override: HOUR=, MINUTE=)
-	scripts/install-launchd.sh $(HOUR) $(MINUTE)
+schedule: ## Install launchd agent: drain + court every 30 min (override: INTERVAL=<seconds>)
+	scripts/install-launchd.sh $(INTERVAL)
 
 unschedule: ## Remove the launchd daily-drain agent
 	scripts/uninstall-launchd.sh

@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# Install (or refresh) the launchd agent that drains bower-bird once a day.
+# Install (or refresh) the launchd agent that runs bower-bird every ~30 min.
 #
-# Why launchd, not cron: a cron job missed while the laptop is asleep is gone
-# for good. A launchd StartCalendarInterval job that was missed while asleep
-# fires on the next wake — exactly the "process when the laptop is awake"
-# model bower-bird wants.
+# Why launchd, not cron: cron jobs missed while the laptop is asleep are gone
+# for good. StartInterval jobs that were missed while asleep fire on the next
+# wake — exactly the "process when the laptop is awake" model bower-bird wants.
 #
-# Usage: scripts/install-launchd.sh [HOUR] [MINUTE]   (defaults 08:00)
+# One pass does two things:
+#   (1) drain Telegram → fetch+render → fill inbox/ (+ tool:/to-clip routing)
+#   (2) court: process trinkets/ → brain/bowers/
+#
+# peck and forage are NOT run by this job — they remain manual.
+#
+# Usage: scripts/install-launchd.sh [INTERVAL_SECONDS]   (default: 1800)
 set -euo pipefail
 
-HOUR="${1:-8}"
-MINUTE="${2:-0}"
+INTERVAL="${1:-1800}"
 
 LABEL="com.griffinreichert.bower-bird"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,13 +41,8 @@ cat > "$PLIST" <<PLIST_EOF
   </array>
   <key>WorkingDirectory</key>
   <string>$REPO_ROOT</string>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>$HOUR</integer>
-    <key>Minute</key>
-    <integer>$MINUTE</integer>
-  </dict>
+  <key>StartInterval</key>
+  <integer>$INTERVAL</integer>
   <key>StandardOutPath</key>
   <string>$REPO_ROOT/data/launchd.log</string>
   <key>StandardErrorPath</key>
@@ -56,6 +55,7 @@ PLIST_EOF
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
-printf 'Installed %s — daily drain at %02d:%02d\n' "$LABEL" "$HOUR" "$MINUTE"
+INTERVAL_MIN=$(( INTERVAL / 60 ))
+printf 'Installed %s — drain + court every %d min (%ds)\n' "$LABEL" "$INTERVAL_MIN" "$INTERVAL"
 printf 'Plist: %s\n' "$PLIST"
 printf 'Test now:  launchctl start %s   (then tail data/launchd.log)\n' "$LABEL"
