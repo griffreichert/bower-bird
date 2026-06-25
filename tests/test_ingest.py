@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from bower_bird import inbox, ingest  # noqa: E402
 from bower_bird.config import Config  # noqa: E402
 from bower_bird.fetch import PageMeta, needs_clipping  # noqa: E402
-from bower_bird.llm import ClippingPlan  # noqa: E402
+from bower_bird.llm import ClippingPlan, FeynmanConcept  # noqa: E402
 from bower_bird.marks import Marks, extract_marks  # noqa: E402
 
 _failures = 0
@@ -264,6 +264,134 @@ def test_conflict_files_skipped() -> None:
     check(inbox._is_processable(Path("normal.md")), "process normal file")
 
 
+def _concept(handle: str = "Retrieval Augmented Generation") -> FeynmanConcept:
+    return FeynmanConcept(
+        handle=handle,
+        definition="Technique supplying an LLM with retrieved docs before answering.",
+        why="Lets the model answer accurately without memorising every fact.",
+        test_question="What problem does RAG solve that fine-tuning alone cannot?",
+        model_answer=(
+            "Fine-tuning bakes facts into the model's weights, but the model can't "
+            "update those weights between calls. RAG pulls fresh documents at query "
+            "time, so the model can answer questions about things that happened after "
+            "it was trained, or things too specific to have been in its training data."
+        ),
+    )
+
+
+def test_mint_bower_new() -> None:
+    """Fresh bower: frontmatter with id:, concept block, and backlink."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        concept = _concept()
+
+        path, bower_id = ingest.mint_bower(cfg, concept, "My Source")
+
+        check(path.exists(), "bower file created")
+        text = path.read_text(encoding="utf-8")
+        check(text.startswith("---"), "bower has frontmatter")
+        check(f"id: {bower_id}" in text, "id in frontmatter")
+        check(len(bower_id) == 36, "id is UUID")
+        check("<!-- bower:concept -->" in text, "concept sentinel present")
+        check(concept.definition in text, "definition written")
+        check(concept.why in text, "why written")
+        check(concept.test_question in text, "test question written")
+        check(concept.model_answer[:30] in text, "model answer written")
+        check("- [[My Source]]" in text, "source backlink asserted")
+        check("## Links" in text, "links section present")
+
+
+def test_mint_bower_idempotent_id() -> None:
+    """Re-minting the same bower preserves the original id."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        concept = _concept()
+
+        _, first_id = ingest.mint_bower(cfg, concept, "Source A")
+        _, second_id = ingest.mint_bower(cfg, concept, "Source B")
+
+        check(first_id == second_id, "id is stable across re-mints")
+        text = (cfg.notes_dir / "Retrieval Augmented Generation.md").read_text(
+            encoding="utf-8"
+        )
+        check(text.count(f"id: {first_id}") == 1, "id appears exactly once")
+
+
+def test_mint_bower_additive_on_human_prose() -> None:
+    """Minting does not clobber human-authored prose outside the sentinel block."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        concept = _concept("Sparse Attention")
+        path = cfg.notes_dir / "Sparse Attention.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "---\ntitle: Sparse Attention\n---\n# Sparse Attention\n\n"
+            "My own notes here.\n",
+            encoding="utf-8",
+        )
+
+        ingest.mint_bower(cfg, concept, "Paper on Attention")
+
+        text = path.read_text(encoding="utf-8")
+        check("My own notes here." in text, "human prose preserved")
+        check("<!-- bower:concept -->" in text, "concept block injected")
+        check(concept.definition in text, "definition added")
+
+
+def test_mint_bower_concept_block_updated() -> None:
+    """Re-minting with new concept data updates only the sentinel block."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        concept_v1 = _concept("Sparse Attention")
+        concept_v2 = FeynmanConcept(
+            handle="Sparse Attention",
+            definition="Updated definition.",
+            why="Updated why.",
+            test_question="Updated question?",
+            model_answer="Updated answer.",
+        )
+
+        path, bower_id = ingest.mint_bower(cfg, concept_v1, "Paper One")
+        _, second_id = ingest.mint_bower(cfg, concept_v2, "Paper Two")
+
+        check(bower_id == second_id, "id unchanged after update")
+        text = path.read_text(encoding="utf-8")
+        check("Updated definition." in text, "concept block updated to v2")
+        check(concept_v1.definition not in text, "v1 definition replaced")
+        check("My own notes" not in text, "no spurious content")
+
+
+def test_mint_bower_injects_id_into_existing_note() -> None:
+    """An existing bower without an id: gets one appended on first mint."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        concept = _concept("Contrastive Learning")
+        path = cfg.notes_dir / "Contrastive Learning.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "---\ntitle: Contrastive Learning\ncreated: 2026-01-01\n---\n"
+            "# Contrastive Learning\n",
+            encoding="utf-8",
+        )
+
+        _, bower_id = ingest.mint_bower(cfg, concept, "Paper")
+
+        text = path.read_text(encoding="utf-8")
+        check(f"id: {bower_id}" in text, "id injected into existing note")
+        check("title: Contrastive Learning" in text, "existing frontmatter preserved")
+        check("created: 2026-01-01" in text, "existing created field preserved")
+
+
 def test_write_inbox_doc() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "BowerBird"
@@ -348,6 +476,11 @@ def main() -> int:
     test_dig_word_boundary()
     test_fetch_helpers()
     test_conflict_files_skipped()
+    test_mint_bower_new()
+    test_mint_bower_idempotent_id()
+    test_mint_bower_additive_on_human_prose()
+    test_mint_bower_concept_block_updated()
+    test_mint_bower_injects_id_into_existing_note()
     test_write_inbox_doc()
     test_write_inbox_doc_empty_body()
     test_write_inbox_doc_stays_in_inbox_boundary()
