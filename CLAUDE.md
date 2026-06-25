@@ -11,8 +11,15 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
 - **Telegram bot** (Tier-1 Haiku drain):
   - **bare link → to-read:** append to `reading-list.md` as `- [ ]` + title +
     one-line "what is it" (metadata, not a summary). No distillation.
+  - **bare link the bot can't read → to-clip:** X/Twitter + other
+    JS-/login-walled pages (known domains skip fetch; others caught by a thin
+    fetch) go to `to-clip.md` as a `- [ ]` checklist. Open in a browser, Web
+    Clipper into `inbox/`, then the clip lane reads + files it.
   - **link + a note, or `read:` prefix → learned:** create a source note in
     `sources/` + assert `[[links]]` into `notes/`.
+  - **`tool:` prefix + link → tools shelf:** append to `tools.md` (title +
+    your note + one-line). A keep-for-later shelf of plugins/repos/tools —
+    NOT knowledge, never enters `brain/`. `tool:` with no link → `_inbox.md`.
   - **unprocessable (no link / junk) → `_inbox.md`** with a reason. Nothing
     dropped.
 - **Obsidian Web Clipper → `inbox/`:** the Tier-1 drain reads the clean clip
@@ -55,7 +62,7 @@ Load-bearing. Don't regress them. Full text:
 The vault is **not** in this repo — it lives in iCloud (Obsidian). bower-bird
 owns one folder there, `BowerBird/` (`config.vault_path`), and writes **nowhere
 else**. Writable at runtime: `inbox/`, `sources/`, `notes/`, `archive/`,
-`reading-list.md`, `_inbox.md`, `digests/`.
+`reading-list.md`, `to-clip.md`, `tools.md`, `_inbox.md`, `digests/`.
 
 Writes are additive: new files, or `_append_link` appends under `## Links` —
 existing notes are never rewritten. `ingest._assert_writable` enforces the
@@ -86,11 +93,11 @@ src/bower_bird/
   config.py    env + owned-folder (BowerBird/) paths + model (frozen Config)
   state.py     telegram offset + url + clip-hash dedup (idempotency)
   telegram.py  getUpdates drain + send receipt
-  router.py    two-lane classification (bare link vs link+note / read:)
+  router.py    lane classification (tool: / bare link / link+note / read:)
   marks.py     reader marks pulled from a clip body (highlight/dig/question/links)
   fetch.py     page metadata (title/description/excerpt)
   llm.py       Anthropic calls: describe_link, synthesize_clipping (pydantic)
-  ingest.py    owned-folder writes (sources/notes/reading-list/_inbox), guarded
+  ingest.py    owned-folder writes (sources/notes/reading-list/to-clip/tools/_inbox), guarded
   inbox.py     clipper inbox scan: clip -> source note + links -> archive
   app.py       drain orchestration (Telegram queue + clipper inbox)
   __main__.py  `python -m bower_bird`

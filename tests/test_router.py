@@ -47,6 +47,21 @@ CASES = [
         "https://example.com/p",
         "(",
     ),
+    # tool: prefix -> tool shelf (overrides note/read routing)
+    (
+        "tool: https://github.com/x/y",
+        Lane.TOOL,
+        "https://github.com/x/y",
+        "",
+    ),
+    (
+        "tool: claude loop plugin https://github.com/x/y",
+        Lane.TOOL,
+        "https://github.com/x/y",
+        "claude loop plugin",
+    ),
+    # tool: with no link is not collectible -> parked
+    ("tool: icon gen thing", Lane.NO_LINK, None, "tool: icon gen thing"),
     # no link
     ("just some thoughts", Lane.NO_LINK, None, "just some thoughts"),
 ]
