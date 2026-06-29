@@ -14,6 +14,8 @@ dependencies = [
 bower-bird = "bower_bird.__main__:main"
 bower_bird = "bower_bird.__main__:main"
 bb = "bower_bird.__main__:main"
+pull = "bower_bird.__main__:pull"
+build = "bower_bird.__main__:build"
 
 [dependency-groups]
 dev = [

@@ -6,8 +6,8 @@
 # wake — exactly the "process when the laptop is awake" model bower-bird wants.
 #
 # One pass does two things:
-#   (1) telegram: pull queue → fetch+render → fill inbox/ (+ tool:/to-clip routing)
-#   (2) gather: process trinkets/ → brain/bowers/
+#   (1) pull: pull queue → fetch+render → fill inbox/ (+ tool:/to-clip routing)
+#   (2) build: build bowers from trinkets/ → brain/bowers/
 #
 # peck and forage are NOT run by this job — they remain manual.
 #
@@ -56,6 +56,6 @@ launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
 INTERVAL_MIN=$(( INTERVAL / 60 ))
-printf 'Installed %s — telegram + gather every %d min (%ds)\n' "$LABEL" "$INTERVAL_MIN" "$INTERVAL"
+printf 'Installed %s — pull + build every %d min (%ds)\n' "$LABEL" "$INTERVAL_MIN" "$INTERVAL"
 printf 'Plist: %s\n' "$PLIST"
 printf 'Test now:  launchctl start %s   (then tail data/launchd.log)\n' "$LABEL"
