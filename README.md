@@ -9,7 +9,7 @@
 ---
 
 A quiet knowledge-collation loop. Send a link to a Telegram bot from your phone;
-your laptop drains it when awake, decides whether it's something to read later or
+your laptop pulls it when awake, decides whether it's something to read later or
 something you've already read, and files it into your notes vault — with proposed
 links you accept or ignore.
 
@@ -45,11 +45,11 @@ linked evergreen note — proposed, for you to accept.
 
 ## How it works (no server)
 
-Telegram's own servers hold the queue (~24h) until drained — no webhook, no
+Telegram's own servers hold the queue (~24h) until pulled — no webhook, no
 public host needed.
 
 ```
-phone ──link──▶ Telegram bot ──(queued)──▶ laptop drains via getUpdates
+phone ──link──▶ Telegram bot ──(queued)──▶ laptop pulls via getUpdates
                                               │
                                    route ┌────┴────┐ write
                                   to-read│         │learned
@@ -60,7 +60,7 @@ phone ──link──▶ Telegram bot ──(queued)──▶ laptop drains via
 ```
 
 Capture is instant; processing waits until the laptop is awake — fine for a
-reading queue. Drain daily (or also copy links to Telegram **Saved Messages** as
+reading queue. Pull daily (or also copy links to Telegram **Saved Messages** as
 a backstop) so nothing ages out of the 24h window.
 
 ## Quickstart
@@ -70,7 +70,7 @@ Requires [uv](https://docs.astral.sh/uv/) and Python ≥ 3.11.
 ```bash
 uv sync                       # create .venv, install deps
 cp .env.example .env          # fill in TELEGRAM_BOT_TOKEN + ANTHROPIC_API_KEY
-uv run python -m bower_bird    # drain the queue once
+uv run python -m bower_bird    # pull the queue once
 ```
 
 `TELEGRAM_BOT_TOKEN` comes from [@BotFather](https://t.me/BotFather);
@@ -90,13 +90,13 @@ layer on the agent framework:
 1. **Base** — prove the loop runs, calls a tool, reads the env.
 2. **Identity** — research-operator: concise, proposes not asserts.
 3. **Memory** — durable facts only: vault conventions, reading interests.
-4. **Telegram** — drain via `getUpdates`. ✅ *(plain Python)*
+4. **Telegram** — pull via `getUpdates`. ✅ *(plain Python)*
 5. **Skill: link → clipping note** — the heart of the project. ✅ *(plain Python)*
 6. **One quiet cron** — daily digest; weekly reading-list groom. Silent when
    there's nothing to surface.
 7. **Profile split** — formalise so the `coding` profile can start.
 
-**Status:** early. Plain-Python ingestion works end-to-end (Telegram drain →
+**Status:** early. Plain-Python ingestion works end-to-end (Telegram pull →
 two-lane router → vault writes). Steps 1–3, 6–7 are next.
 
 ## Contributing

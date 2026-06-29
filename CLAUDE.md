@@ -8,7 +8,7 @@ what it is, the no-server architecture, the capture model, and the roadmap — s
 
 Two capture entry points, both landing in the owned `BowerBird/` folder:
 
-- **Telegram bot** (Tier-1 Haiku drain):
+- **Telegram bot** (Tier-1 Haiku pull):
   - **bare link → to-read:** append to `reading-list.md` as `- [ ]` + title +
     one-line "what is it" (metadata, not a summary). No distillation.
   - **bare link the bot can't read → to-clip:** X/Twitter + other
@@ -22,7 +22,7 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
     NOT knowledge, never enters `brain/`. `tool:` with no link → `_inbox.md`.
   - **unprocessable (no link / junk) → `_inbox.md`** with a reason. Nothing
     dropped.
-- **Obsidian Web Clipper → `inbox/`:** the Tier-1 drain reads the clean clip
+- **Obsidian Web Clipper → `inbox/`:** the Tier-1 pull reads the clean clip
   body (skips `fetch`), writes a `sources/` note + links, moves the original to
   `archive/`. A clip counts as *read* → processed immediately.
 
@@ -75,7 +75,7 @@ points at the project's *planning* notes, a different folder from the runtime
 Synthesis is split by cost shape (decided 2026-06-24):
 
 - **Tier 1 — per-item (this Python app):** first-party **Anthropic API**,
-  **`claude-haiku-4-5`**. The cron drain reading inbox/Telegram and writing
+  **`claude-haiku-4-5`**. The cron pull reading inbox/Telegram and writing
   baseline `sources/` notes + links. Cheap, automatable. Structured output uses
   `messages.parse` with a pydantic model (`llm.ClippingPlan`).
 - **Tier 2 — whole-graph (Claude Code, not this app):** the deep digest and
@@ -92,14 +92,14 @@ the API. Per-lane Tier-1 model is a one-line config change if a lane reads thin.
 src/bower_bird/
   config.py    env + owned-folder (BowerBird/) paths + model (frozen Config)
   state.py     telegram offset + url + clip-hash dedup (idempotency)
-  telegram.py  getUpdates drain + send receipt
+  telegram.py  getUpdates pull + send receipt
   router.py    lane classification (tool: / bare link / link+note / read:)
   marks.py     reader marks pulled from a clip body (highlight/dig/question/links)
   fetch.py     page metadata (title/description/excerpt)
   llm.py       Anthropic calls: describe_link, synthesize_clipping (pydantic)
   ingest.py    owned-folder writes (sources/notes/reading-list/to-clip/tools/_inbox), guarded
   inbox.py     clipper inbox scan: clip -> source note + links -> archive
-  app.py       drain orchestration (Telegram queue + clipper inbox)
+  app.py       pull orchestration (Telegram queue + clipper inbox)
   __main__.py  `python -m bower_bird`
 tests/         router + ingest/inbox unit tests (pure logic, no network)
 scripts/       launchd install/uninstall, digest.sh (Claude Code Tier-2)
