@@ -3,17 +3,15 @@
 Run: uv run python tests/test_ingest.py
 """
 
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from bower_bird import inbox, ingest  # noqa: E402
-from bower_bird.config import Config  # noqa: E402
-from bower_bird.fetch import PageMeta, needs_clipping  # noqa: E402
-from bower_bird.llm import ClippingPlan, FeynmanConcept  # noqa: E402
-from bower_bird.marks import Marks, extract_marks  # noqa: E402
+from bower_bird import inbox, ingest
+from bower_bird.config import Config
+from bower_bird.fetch import PageMeta, needs_clipping
+from bower_bird.llm import ClippingPlan, EntityRef, FeynmanConcept
+from bower_bird.marks import Marks, extract_marks, extract_urls, pick_source_url
+from bower_bird.state import State
 
 _failures = 0
 
@@ -469,6 +467,125 @@ def test_write_inbox_doc_stays_in_inbox_boundary() -> None:
         )
 
 
+def test_process_inbox_url_dedup() -> None:
+    """A re-clipped source (same URL, fresh bytes → fresh hash) is not minted
+    twice. The URL guard returns before any LLM call, so this stays offline."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        (root / "trinkets").mkdir(parents=True)
+        cfg = _config(root)
+        state = State(path=root / "state.json")
+        url = "https://x.com/foo/status/123"
+        state.mark_url(url)  # already processed earlier under a different title
+        clip = root / "trinkets" / "some-clip.md"
+        clip.write_text(
+            f'---\ntitle: "Foo"\nsource: "{url}"\n---\nbody text\n', encoding="utf-8"
+        )
+        log = inbox.process_inbox(cfg, state)
+        check(
+            any("url already processed" in line for line in log),
+            "re-clipped URL is skipped as a dup",
+        )
+        check(not clip.exists(), "dup clip moved out of trinkets/")
+        check(
+            not cfg.sources_dir.exists() or not any(cfg.sources_dir.glob("*.md")),
+            "no source note minted for a dup URL",
+        )
+
+
+def test_extract_urls() -> None:
+    body = (
+        "repo https://github.com/a/b and [tweet](https://x.com/u) and an image "
+        "https://pbs.twimg.com/x.jpg then a dup https://github.com/a/b."
+    )
+    urls = extract_urls(body)
+    check("https://github.com/a/b" in urls, "bare url extracted")
+    check("https://x.com/u" in urls, "markdown-link url extracted")
+    check(not any("twimg" in u for u in urls), "image url filtered out")
+    check(urls.count("https://github.com/a/b") == 1, "duplicate url collapsed")
+    check(all(not u.endswith(".") for u in urls), "trailing punctuation stripped")
+
+
+def test_pick_source_url() -> None:
+    # author profile first, then the post + the repo — should skip the profile
+    urls = [
+        "https://x.com/skalskip92",
+        "https://x.com/skalskip92/status/123",
+        "https://github.com/roboflow/supervision",
+    ]
+    check(
+        pick_source_url(urls) == "https://x.com/skalskip92/status/123",
+        "deep-path post chosen over bare profile",
+    )
+    check(pick_source_url([]) == "", "empty list -> empty string")
+    check(
+        pick_source_url(["https://x.com/onlyprofile"]) == "https://x.com/onlyprofile",
+        "falls back to the only url when none are deep",
+    )
+
+
+def test_file_entities_creates_leaf_nodes() -> None:
+    """Tools/people become unquizzed leaf notes, linked to concepts + source,
+    and are NOT seeded into the review store."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        meta = PageMeta(
+            url="https://x.co/p", title="CV in sport", description="", body_excerpt="b"
+        )
+        plan = ClippingPlan(
+            concise_title="Supervision in sport",
+            description="A CV library used for sports analytics",
+            topics=["Computer vision"],
+            connection="",
+            tools=[
+                EntityRef(
+                    name="roboflow/supervision",
+                    url="https://github.com/roboflow/supervision",
+                    note="A computer-vision library",
+                    topics=["Computer vision"],
+                )
+            ],
+            people=[
+                EntityRef(
+                    name="Piotr Skalski",
+                    url="https://x.com/skalskip92",
+                    note="Author of the library",
+                    topics=["Computer vision"],
+                )
+            ],
+        )
+        src = ingest.create_source_note(cfg, meta, plan)
+        ids = ingest.file_entities(cfg, plan, src.stem)
+
+        tool = cfg.tools_dir / "roboflow-supervision.md"
+        person = cfg.people_dir / "Piotr Skalski.md"
+        check(tool.exists(), "tool leaf created in brain/tools/")
+        check(person.exists(), "person leaf created in brain/people/")
+
+        ttext = tool.read_text(encoding="utf-8")
+        check("- tool" in ttext, "tool leaf tagged tool")
+        check("[[Computer vision]]" in ttext, "tool leaf links to concept")
+        check(f"[[{src.stem}]]" in ttext, "tool leaf links back to source")
+        check("A computer-vision library" in ttext, "tool note body stored")
+
+        ptext = person.read_text(encoding="utf-8")
+        check("- person" in ptext, "person leaf tagged person")
+
+        concept = cfg.notes_dir / "Computer vision.md"
+        check(
+            "[[roboflow-supervision]]" in concept.read_text(encoding="utf-8"),
+            "concept bower backlinks the tool leaf",
+        )
+        check(
+            "[[roboflow-supervision]]" in src.read_text(encoding="utf-8"),
+            "source note surfaces the tool leaf",
+        )
+        check(not cfg.review_path.exists(), "leaves not seeded into review store")
+        check(any("roboflow" in i for i in ids), "filed-entity id returned")
+
+
 def main() -> int:
     test_assert_writable()
     test_append_link_additive_and_idempotent()
@@ -490,6 +607,10 @@ def main() -> int:
     test_write_inbox_doc()
     test_write_inbox_doc_empty_body()
     test_write_inbox_doc_stays_in_inbox_boundary()
+    test_process_inbox_url_dedup()
+    test_extract_urls()
+    test_pick_source_url()
+    test_file_entities_creates_leaf_nodes()
     if _failures:
         print(f"\n{_failures} failure(s).")
         return 1

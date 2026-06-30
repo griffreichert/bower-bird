@@ -18,11 +18,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from .config import Config
-from .fetch import PageMeta
-from .llm import ClippingPlan, FeynmanConcept
-from .marks import Marks
-from .review import ReviewStore
+from bower_bird.config import Config
+from bower_bird.fetch import PageMeta
+from bower_bird.llm import ClippingPlan, EntityRef, FeynmanConcept
+from bower_bird.marks import Marks
+from bower_bird.review import ReviewStore
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
 _SKIP_NOTE_STEMS = {"_index", "_archive", "_template", "__init__"}
@@ -396,6 +396,80 @@ def create_source_note(
         _append_link(config, find_concept_path(config, target), source_title)
 
     return path
+
+
+# --------------------------------------------------------------------------- #
+# entity leaf notes (people + tools — unquizzed brain leaves)
+# --------------------------------------------------------------------------- #
+
+_LEAF_FRONTMATTER = """\
+---
+title: "{title}"
+source: "{url}"
+created: {today}
+bower: generated
+tags:
+  - {kind}
+---
+# {title}
+"""
+
+
+def create_leaf_note(
+    config: Config,
+    kind: str,
+    entity: EntityRef,
+    source_title: str,
+) -> Path:
+    """File a person/tool as an unquizzed leaf note in brain/{people,tools}/.
+
+    A leaf links into the concept graph like a source does, but is NEVER minted
+    as a bower and NEVER seeded into the review store — it carries no Feynman
+    payload and is not quizzed. Additive: a brand-new file, or `_append_link`
+    appends to an existing one. `kind` is the tag + folder ('person' | 'tool').
+    """
+    folder = config.people_dir if kind == "person" else config.tools_dir
+    folder.mkdir(parents=True, exist_ok=True)
+    safe = _safe_filename(entity.name)
+    path = folder / f"{safe}.md"
+    _assert_writable(config, path)
+
+    if not path.exists():
+        body = _LEAF_FRONTMATTER.format(
+            title=entity.name.replace('"', "'"),
+            url=entity.url,
+            today=_today(),
+            kind=kind,
+        )
+        if entity.note.strip():
+            body = f"{body}\n{entity.note.strip()}\n"
+        path.write_text(body, encoding="utf-8")
+
+    # Link into the concept graph (reciprocal, additive) + back to the source.
+    for topic in entity.topics:
+        _append_link(config, path, topic)
+        _append_link(config, find_concept_path(config, topic), safe)
+    _append_link(config, path, source_title)
+    return path
+
+
+def file_entities(config: Config, plan: ClippingPlan, source_title: str) -> list[str]:
+    """File every tool/person leaf in a plan, backlinked from the source note.
+
+    Returns short ids like 'tool:roboflow-supervision' for the run log.
+    """
+    filed: list[str] = []
+    source_path = config.sources_dir / f"{_safe_filename(source_title)}.md"
+    for kind, entities in (("tool", plan.tools), ("person", plan.people)):
+        for entity in entities:
+            if not entity.name.strip():
+                continue
+            leaf = create_leaf_note(config, kind, entity, source_title)
+            # Surface the leaf on the source note's Links (additive, idempotent).
+            if source_path.exists():
+                _append_link(config, source_path, leaf.stem)
+            filed.append(f"{kind}:{leaf.stem}")
+    return filed
 
 
 # --------------------------------------------------------------------------- #

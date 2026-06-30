@@ -20,12 +20,12 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from . import ingest
-from .config import Config
-from .fetch import PageMeta
-from .llm import synthesize_clipping
-from .marks import extract_marks
-from .state import State, content_hash
+from bower_bird import ingest
+from bower_bird.config import Config
+from bower_bird.fetch import PageMeta
+from bower_bird.llm import synthesize_clipping
+from bower_bird.marks import extract_marks, extract_urls, pick_source_url
+from bower_bird.state import State, content_hash
 
 _BODY_LIMIT = 6000
 
@@ -58,9 +58,11 @@ def _parse_clip(text: str) -> tuple[dict[str, str], str]:
     return fm, body
 
 
-def _clip_to_meta(path: Path, fm: dict[str, str], body: str) -> PageMeta:
+def _clip_to_meta(
+    path: Path, fm: dict[str, str], body: str, fallback_url: str = ""
+) -> PageMeta:
     return PageMeta(
-        url=fm.get("source") or fm.get("url") or "",
+        url=fm.get("source") or fm.get("url") or fallback_url or "",
         title=fm.get("title") or path.stem,
         description=fm.get("description", ""),
         body_excerpt=body[:_BODY_LIMIT],
@@ -105,13 +107,27 @@ def process_inbox(config: Config, state: State) -> list[str]:
             log.append(f"dup {path.name}: already processed, archived")
             continue
 
+        fm, body = _parse_clip(raw)
+        body_urls = extract_urls(body)
+        meta = _clip_to_meta(path, fm, body, fallback_url=pick_source_url(body_urls))
+        # Same source re-clipped gets fresh bytes + a fresh LLM title, so the
+        # content hash misses it — guard on the source URL too. Skip when absent,
+        # else every url-less clip would collide on "".
+        if meta.url and state.seen_url(meta.url):
+            _archive(config, path, new_stem=meta.title)
+            log.append(f"dup {path.name}: url already processed, archived")
+            continue
+
         try:
-            fm, body = _parse_clip(raw)
-            meta = _clip_to_meta(path, fm, body)
             marks = extract_marks(body, self_url=meta.url)
             candidates = ingest.list_concept_notes(config)
             plan = synthesize_clipping(
-                meta, "", candidates, model=config.model, highlights=marks.highlights
+                meta,
+                "",
+                candidates,
+                model=config.model,
+                highlights=marks.highlights,
+                body_urls=body_urls,
             )
             note_path = ingest.create_source_note(config, meta, plan, marks=marks)
         except Exception as exc:  # noqa: BLE001 — one bad clip must not stall the rest
@@ -129,6 +145,9 @@ def process_inbox(config: Config, state: State) -> list[str]:
             _, bower_id = ingest.mint_bower(config, concept, source_title)
             bower_ids.append(f"{concept.handle}:{bower_id[:8]}")
 
+        # File named entities (tools, people) as their own leaf nodes.
+        entity_ids = ingest.file_entities(config, plan, source_title)
+
         state.mark_hash(digest)
         if meta.url:
             state.mark_url(meta.url)
@@ -144,9 +163,10 @@ def process_inbox(config: Config, state: State) -> list[str]:
                 f"{len(marks.questions)}q/{len(marks.further_links)}l"
             )
             bowers = ("; bowers: " + ", ".join(bower_ids)) if bower_ids else ""
+            entities = ("; entities: " + ", ".join(entity_ids)) if entity_ids else ""
             log.append(
                 f"{path.name} -> sources/{note_path.name} "
-                f"(links: {links}; marks: {marked}{bowers})"
+                f"(links: {links}; marks: {marked}{bowers}{entities})"
             )
 
     return log

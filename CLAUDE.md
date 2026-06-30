@@ -19,12 +19,22 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
     `sources/` + assert `[[links]]` into `notes/`.
   - **`tool:` prefix + link → tools shelf:** append to `tools.md` (title +
     your note + one-line). A keep-for-later shelf of plugins/repos/tools —
-    NOT knowledge, never enters `brain/`. `tool:` with no link → `_inbox.md`.
+    pure recall, NOT knowledge, never enters `brain/`. `tool:` with no link →
+    `_inbox.md`. (Distinct from a tool *named inside a read source* — that
+    becomes a `brain/tools/` leaf node; see Entity leaf nodes below.)
   - **unprocessable (no link / junk) → `_inbox.md`** with a reason. Nothing
     dropped.
 - **Obsidian Web Clipper → `inbox/`:** the Tier-1 pull reads the clean clip
   body (skips `fetch`), writes a `sources/` note + links, moves the original to
   `archive/`. A clip counts as *read* → processed immediately.
+
+**Entity leaf nodes (`llm.EntityRef`, `ingest.create_leaf_note`).** A read
+source often names things worth their own node: **tools** (repos/libraries) →
+`brain/tools/`, **people** (authors/creators) → `brain/people/`. Haiku extracts
+these into `ClippingPlan.tools/people`, grounded on URLs pulled from the body
+(`marks.extract_urls`). Each is an **unquizzed leaf** — linked to concepts +
+backlinked from the source, but never minted as a bower and never seeded into
+the review store (no Feynman payload, no `peck`).
 
 **Reader marks (in a clip body, `marks.py`).** The source note is thin —
 provenance + the reader's marks, **not the article body** (the full clip stays
@@ -61,8 +71,9 @@ Load-bearing. Don't regress them. Full text:
 
 The vault is **not** in this repo — it lives in iCloud (Obsidian). bower-bird
 owns one folder there, `BowerBird/` (`config.vault_path`), and writes **nowhere
-else**. Writable at runtime: `inbox/`, `sources/`, `notes/`, `archive/`,
-`reading-list.md`, `to-clip.md`, `tools.md`, `_inbox.md`, `digests/`.
+else**. Writable at runtime: `inbox/`, `brain/sources/`, `brain/bowers/`,
+`brain/people/`, `brain/tools/`, `archive/`, `reading-list.md`, `to-clip.md`,
+`tools.md`, `_inbox.md`, `digests/`.
 
 Writes are additive: new files, or `_append_link` appends under `## Links` —
 existing notes are never rewritten. `ingest._assert_writable` enforces the
