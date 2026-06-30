@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import sys
 
-from .app import run_all, run_gather, run_telegram
-from .config import Config, load_config
+from bower_bird.app import run_all, run_gather, run_telegram
+from bower_bird.config import Config, load_config
 
 
 def _load() -> Config | int:
@@ -56,7 +56,7 @@ def main() -> int:
         config = _load()
         if isinstance(config, int):
             return config
-        from .review import main as peck_main
+        from bower_bird.review import main as peck_main
 
         return peck_main(config)
 
@@ -64,7 +64,7 @@ def main() -> int:
         config = _load()
         if isinstance(config, int):
             return config
-        from .forage import main as forage_main
+        from bower_bird.forage import main as forage_main
 
         return forage_main(config)
 

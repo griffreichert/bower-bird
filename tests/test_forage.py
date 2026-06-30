@@ -9,10 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from bower_bird.config import Config  # noqa: E402
-from bower_bird.forage import (  # noqa: E402
+from bower_bird.config import Config
+from bower_bird.forage import (
     GapSignals,
     _is_thin_bower,
     gather_dig_marks,
@@ -23,7 +21,7 @@ from bower_bird.forage import (  # noqa: E402
     render_forage,
     write_forage,
 )
-from bower_bird.review import ReviewStore  # noqa: E402
+from bower_bird.review import ReviewStore
 
 _failures = 0
 
