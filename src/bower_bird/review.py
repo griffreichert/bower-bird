@@ -21,7 +21,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .config import Config
+from bower_bird.config import Config
 
 # ---------------------------------------------------------------------------
 # Leitner constants
@@ -328,7 +328,7 @@ def main(config: Config) -> int:
 
 if __name__ == "__main__":
     # Allow running directly: `uv run python -m bower_bird.review`
-    from .config import load_config
+    from bower_bird.config import load_config
 
     try:
         _cfg = load_config()

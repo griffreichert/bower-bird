@@ -3,12 +3,7 @@
 Run: uv run python tests/test_router.py
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from bower_bird.router import Lane, parse  # noqa: E402
+from bower_bird.router import Lane, parse
 
 CASES = [
     # bare link -> to-read

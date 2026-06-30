@@ -28,9 +28,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import Config
-from .marks import _extract_dig, _extract_questions
-from .review import ReviewStore
+from bower_bird.config import Config
+from bower_bird.marks import _extract_dig, _extract_questions
+from bower_bird.review import ReviewStore
 
 # ---------------------------------------------------------------------------
 # Thin-bower detection
@@ -356,7 +356,7 @@ def main(config: Config) -> int:
 
 if __name__ == "__main__":
     # Allow running directly: `uv run python -m bower_bird.forage`
-    from .config import load_config
+    from bower_bird.config import load_config
 
     try:
         _cfg = load_config()

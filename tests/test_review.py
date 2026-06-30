@@ -11,10 +11,8 @@ import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from bower_bird.config import Config  # noqa: E402
-from bower_bird.review import LEITNER_LADDER, Review, ReviewStore  # noqa: E402
+from bower_bird.config import Config
+from bower_bird.review import LEITNER_LADDER, Review, ReviewStore
 
 _failures = 0
 
@@ -208,7 +206,7 @@ def test_store_due_today_filter() -> None:
         cfg = _config(root)
         store = ReviewStore.load(cfg)
 
-        today = date(2026, 6, 25)
+        today = date.today()
         future = today + timedelta(days=10)
 
         # Seed one due today, one with a future date
