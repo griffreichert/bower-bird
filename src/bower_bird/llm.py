@@ -18,7 +18,7 @@ from __future__ import annotations
 import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
-from .fetch import PageMeta
+from bower_bird.fetch import PageMeta
 
 # Haiku 4.5 does not take `thinking`/`effort` params — omit them. Small caps:
 # these are one-liners and short JSON, not essays.
@@ -59,6 +59,37 @@ class FeynmanConcept(BaseModel):
     )
 
 
+class EntityRef(BaseModel):
+    """A named thing mentioned in a source that deserves its own graph node —
+    a tool (repo/library/plugin) or a person (author/creator/figure). Filed as
+    an unquizzed leaf note, linked to concepts; NOT a bower, never quizzed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        description="The node title. For a tool, its real name (e.g. "
+        "'roboflow/supervision', not 'a CV library'). For a person, their full "
+        "name if known, else their handle (e.g. 'Piotr Skalski')."
+    )
+    url: str = Field(
+        default="",
+        description="Provenance URL for this entity if one appears in the "
+        "supplied links (the repo URL for a tool, the profile/author URL for a "
+        "person). Empty string if none is present — never invent one.",
+    )
+    note: str = Field(
+        default="",
+        description="One factual line: what this tool IS / who this person is "
+        "and why they appear here.",
+    )
+    topics: list[str] = Field(
+        default_factory=list,
+        description="Concept handles from the topics list this entity connects "
+        "to (e.g. a CV tool → 'Computer vision'). [] if none fit.",
+    )
+
+
 class ClippingPlan(BaseModel):
     """Structured output for the learned lane. Pointers, never a summary."""
 
@@ -93,6 +124,18 @@ class ClippingPlan(BaseModel):
         "1-3 ideas this source most clearly illuminates. Skip minor topics. "
         "Each handle MUST appear in the topics list. [] if highlights are thin "
         "or no concept is clear enough to quiz on.",
+    )
+    tools: list[EntityRef] = Field(
+        default_factory=list,
+        description="Tools named in this source — repos, libraries, plugins, "
+        "products worth their own shelf node (e.g. 'roboflow/supervision'). "
+        "Attach the repo/product URL from the supplied links. [] if none.",
+    )
+    people: list[EntityRef] = Field(
+        default_factory=list,
+        description="People named in this source worth their own node — "
+        "authors, creators, researchers, figures. Attach their profile/author "
+        "URL from the supplied links. [] if none.",
     )
 
 
@@ -134,9 +177,11 @@ def synthesize_clipping(
     candidate_links: list[str],
     model: str,
     highlights: list[str] | None = None,
+    body_urls: list[str] | None = None,
 ) -> ClippingPlan:
     candidates = "\n".join(f"- {c}" for c in candidate_links) or "(none yet)"
     highlights = highlights or []
+    body_urls = body_urls or []
     highlight_block = (
         "\nThe reader HIGHLIGHTED these passages — this is the signal for what "
         "mattered to them. Anchor your proposed concept and backlinks on these, "
@@ -144,6 +189,14 @@ def synthesize_clipping(
         + "\n".join(f"- {h}" for h in highlights)
         + "\n"
         if highlights
+        else ""
+    )
+    links_block = (
+        "\nLinks found in the note (use these as provenance URLs when you "
+        "extract a tool or person — never invent a URL):\n"
+        + "\n".join(f"- {u}" for u in body_urls)
+        + "\n"
+        if body_urls
         else ""
     )
     prompt = (
@@ -163,10 +216,16 @@ def synthesize_clipping(
         "definition, a 1-line why-it-matters, a test question that requires real "
         "grasp, and a model answer at the level of a thoughtful 12-year-old. "
         "Skip concepts where the source is too thin to support a graded answer.\n\n"
+        "Also extract named ENTITIES that deserve their own node: TOOLS (repos, "
+        "libraries, plugins, products — e.g. 'roboflow/supervision') and PEOPLE "
+        "(authors, creators, researchers, figures). Give each its provenance URL "
+        "from the supplied links, a one-line note, and the topics it connects "
+        "to. Extract only genuinely named things — [] if none.\n\n"
         f"Source URL: {meta.url}\n"
         f"Source title: {meta.title}\n"
         f"My note (why it matters): {note or '(none)'}\n"
-        f"{highlight_block}\n"
+        f"{highlight_block}"
+        f"{links_block}\n"
         f"Existing evergreen notes (candidates for backlinks):\n{candidates}\n\n"
         f"Source excerpt (context only):\n{meta.body_excerpt[:3000]}"
     )

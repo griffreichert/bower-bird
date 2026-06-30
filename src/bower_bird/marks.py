@@ -29,6 +29,7 @@ _IMAGE_URL = re.compile(
     r"(pbs\.twimg\.com|\.(?:png|jpe?g|gif|webp|svg)(?:[?#]|$)|[?&]format=(?:jpg|jpeg|png|webp|gif))",
     re.IGNORECASE,
 )
+_BARE_URL = re.compile(r"https?://[^\s)\]<>]+")
 _DIG = re.compile(r"#dig\b")  # \b so #digest / #digging don't match
 _QUESTION = re.compile(r"^>\s*\?\s?(.*)$")
 _QUOTE_LINE = re.compile(r"^>\s?(.*)$")
@@ -111,6 +112,43 @@ def _extract_links(body: str, self_url: str) -> list[tuple[str, str]]:
         seen.add(url)
         out.append((anchor.strip() or url, url))
     return out
+
+
+def extract_urls(body: str) -> list[str]:
+    """Every link in a clip body — bare or markdown, de-duped, order-preserving,
+    images dropped. Grounds entity (tool/person) extraction and supplies the
+    source URL when the clip frontmatter has none (e.g. a Telegram note pasted
+    with bare links)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for match in _BARE_URL.finditer(body):
+        url = match.group(0).rstrip(".,);:'\"")
+        if url in seen or _IMAGE_URL.search(url):
+            continue
+        seen.add(url)
+        out.append(url)
+    return out
+
+
+def pick_source_url(urls: list[str]) -> str:
+    """Choose the most source-like URL from a clip's body links.
+
+    Prefer one with a deep path (a post / article / repo — ≥2 path segments,
+    e.g. `x.com/u/status/123`, `github.com/org/repo`) over a bare profile or
+    domain root (`x.com/u`). Falls back to the first URL; '' if none.
+
+    # ponytail: 2-segment path heuristic — good enough to skip author profiles;
+    # swap for a known-profile-domain list if it picks wrong on real clips.
+    """
+    if not urls:
+        return ""
+    for url in urls:
+        after = url.split("://", 1)[-1]
+        path = after.split("/", 1)[1] if "/" in after else ""
+        segments = [s for s in path.split("/") if s]
+        if len(segments) >= 2:
+            return url
+    return urls[0]
 
 
 def extract_marks(body: str, self_url: str = "") -> Marks:

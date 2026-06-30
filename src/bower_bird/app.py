@@ -9,12 +9,12 @@ within the current session — no long-poll loop.
 
 from __future__ import annotations
 
-from . import inbox, ingest, telegram
-from .config import Config, load_config
-from .fetch import fetch, fetch_rendered, needs_clipping
-from .llm import describe_link, synthesize_clipping
-from .router import Lane, parse
-from .state import State
+from bower_bird import inbox, ingest, telegram
+from bower_bird.config import Config, load_config
+from bower_bird.fetch import fetch, fetch_rendered, needs_clipping
+from bower_bird.llm import describe_link, synthesize_clipping
+from bower_bird.router import Lane, parse
+from bower_bird.state import State
 
 
 def _handle(config: Config, state: State, text: str) -> str:
@@ -74,6 +74,9 @@ def _handle(config: Config, state: State, text: str) -> str:
     state.mark_url(url)
     if path is None:
         return f"Already filed: {meta.title}"
+
+    # File named tool/person entities as their own leaf nodes (same as the clip lane).
+    ingest.file_entities(config, plan, path.stem)
 
     links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
     return f"Filed: {meta.title}\nLinked: {links}"

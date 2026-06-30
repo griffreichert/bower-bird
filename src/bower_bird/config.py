@@ -107,6 +107,19 @@ class Config:
         return self.brain_dir / "bowers"
 
     @property
+    def people_dir(self) -> Path:
+        """People notes: brain/people/<name>.md. Unquizzed leaf nodes (authors,
+        creators, figures) — linked to concepts, never minted as bowers."""
+        return self.brain_dir / "people"
+
+    @property
+    def tools_dir(self) -> Path:
+        """Tool notes: brain/tools/<name>.md. Unquizzed leaf nodes (repos, libs,
+        plugins referenced in a read clip) — linked to concepts, never quizzed.
+        Distinct from the flat `tools.md` shelf (the bare `tool:` recall lane)."""
+        return self.brain_dir / "tools"
+
+    @property
     def topic_index_path(self) -> Path:
         """The bower map, maintained by Tier-2 (Claude Code)."""
         return self.brain_dir / "_topic_index.md"
