@@ -139,7 +139,7 @@ def test_create_source_note_asserts_links() -> None:
             concise_title="Cool Post",
             description="A blog post",
             topics=["Caching", "Cache Invalidation"],
-            connection="both about caches",
+            key_ideas=["caches go stale", "invalidation is hard"],
         )
         marks = Marks(
             highlights=["a kept passage"], further_links=[("Ref", "https://r.co")]
@@ -153,6 +153,9 @@ def test_create_source_note_asserts_links() -> None:
         has_links = "[[Caching]]" in src and "[[Cache Invalidation]]" in src
         check(has_links, "links in source")
         check("## Note\nwhy it matters" in src, "human note stored")
+        has_ideas = "## Key ideas" in src and "- caches go stale" in src
+        check(has_ideas, "key ideas distilled onto the node")
+        check("Why these connect" not in src, "why-connect prose dropped")
         check("> a kept passage" in src, "highlight stored verbatim")
         check("[Ref](https://r.co)" in src, "further-reading link stored")
         check("## Captured" not in src, "full article body NOT stored")
@@ -190,7 +193,6 @@ def test_links_into_existing_nested_concept() -> None:
             concise_title="RL Post",
             description="post",
             topics=["Verifiers"],
-            connection="",
         )
         ingest.create_source_note(cfg, meta, plan)
         check(
@@ -538,7 +540,6 @@ def test_file_entities_creates_leaf_nodes() -> None:
             concise_title="Supervision in sport",
             description="A CV library used for sports analytics",
             topics=["Computer vision"],
-            connection="",
             tools=[
                 EntityRef(
                     name="roboflow/supervision",

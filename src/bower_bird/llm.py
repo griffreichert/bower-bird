@@ -114,9 +114,14 @@ class ClippingPlan(BaseModel):
         "when no candidate fits and the topic is broad enough to reuse. [] if "
         "none fit."
     )
-    connection: str = Field(
-        description="One line on how these topics connect through this source — "
-        "the pointer, not a summary."
+    key_ideas: list[str] = Field(
+        default_factory=list,
+        description="The source's distilled load-bearing ideas — the substance a "
+        "reader should retain (e.g. for Ogilvy on writing: 'Write the way you "
+        "talk', 'Never write more than two pages', 'Use short words'). 3-6 "
+        "concrete bullets drawn ONLY from the supplied body/highlights — never "
+        "invented from prior knowledge of the topic. [] if the body is too thin "
+        "to extract real ideas (never pad).",
     )
     concepts: list[FeynmanConcept] = Field(
         default_factory=list,
@@ -208,8 +213,12 @@ def synthesize_clipping(
         "notes listed as candidates; add a new topic only when none fits and "
         "it's broad enough to reuse. Each topic is a SHORT, REUSABLE concept "
         "handle (a 2-5 word noun phrase many sources could link to, e.g. "
-        "'Agentic loops'), NOT a sentence or claim, NOT the source title. Give "
-        "pointers (what connects to what and why), never a summary.\n\n"
+        "'Agentic loops'), NOT a sentence or claim, NOT the source title.\n\n"
+        "Then distill the source's KEY IDEAS — the load-bearing substance a "
+        "reader should retain (3-6 concrete bullets). Draw them ONLY from the "
+        "body and highlights below; never invent ideas from your own prior "
+        "knowledge of the topic, and give [] if the body is too thin to extract "
+        "real ideas.\n\n"
         "Also provide a Feynman payload for the 1-3 LOAD-BEARING concepts only "
         "(the ideas this source most sharply illuminates — skip minor ones). "
         "Each concept needs: handle (must match a topic above), a 1-line plain "
@@ -242,7 +251,7 @@ def synthesize_clipping(
             concise_title=meta.title,
             description=meta.title,
             topics=[],
-            connection="",
+            key_ideas=[],
             concepts=[],
         )
     return plan
