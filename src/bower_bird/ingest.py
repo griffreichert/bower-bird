@@ -370,8 +370,9 @@ def create_source_note(
         ),
         f"## Links\n{backlinks}\n",
     ]
-    if plan.connection:
-        parts.append(f"**Why these connect:** {plan.connection}\n")
+    if plan.key_ideas:
+        body = "\n".join(f"- {idea}" for idea in plan.key_ideas)
+        parts.append(f"## Key ideas\n{body}\n")
     if marks.highlights:
         body = "\n".join(f"> {h}" for h in marks.highlights)
         parts.append(f"## Highlights\n{body}\n")
