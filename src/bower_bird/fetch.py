@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+from markdownify import markdownify
 from pydantic import BaseModel, ConfigDict
 
 _UA = "Mozilla/5.0 (compatible; bower-bird/0.1; +https://github.com/)"
@@ -59,15 +60,12 @@ def _meta_content(soup: BeautifulSoup, *names: str) -> str:
     return ""
 
 
-def _render_paragraphs(soup: BeautifulSoup) -> str:
-    """Extract readable paragraph-structured text from a parsed page.
+def _render_markdown(soup: BeautifulSoup) -> str:
+    """Render a readable markdown body from a parsed page.
 
-    Strips boilerplate (script/style/nav/footer/header), then walks top-level
-    block elements to emit newline-separated paragraphs — much more readable
-    than collapsing all whitespace into one line.
-
-    Returns plain text; not markdown-formatted (no headings, no bullets) so
-    it's safe to embed in a markdown doc without escaping.
+    Strips boilerplate (script/style/nav/footer/header/aside), picks the main
+    content region, then converts it to markdown (headings/lists/links intact)
+    for the human to read + annotate in the inbox doc.
     """
     for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
         tag.decompose()
@@ -83,33 +81,9 @@ def _render_paragraphs(soup: BeautifulSoup) -> str:
         or soup
     )
 
-    _BLOCK = {
-        "p",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "li",
-        "blockquote",
-        "pre",
-        "div",
-        "section",
-    }
-
-    paragraphs: list[str] = []
-    seen: set[str] = set()
-    for el in main.find_all(_BLOCK):  # type: ignore[union-attr]
-        # Skip deeply nested blocks — we want top-level chunks, not duplicates.
-        if any(p.name in _BLOCK for p in el.parents if p is not main):
-            continue
-        chunk = " ".join(el.get_text(" ", strip=True).split())
-        if chunk and chunk not in seen:
-            seen.add(chunk)
-            paragraphs.append(chunk)
-
-    return "\n\n".join(paragraphs)
+    md = markdownify(str(main), heading_style="ATX")
+    # Collapse the runs of blank lines markdownify leaves behind.
+    return "\n\n".join(chunk.strip() for chunk in md.split("\n\n") if chunk.strip())
 
 
 def fetch(url: str, timeout: float) -> PageMeta:
@@ -180,8 +154,8 @@ def fetch_rendered(url: str, timeout: float) -> tuple[PageMeta, str]:
         soup, "og:description", "twitter:description", "description"
     )
 
-    # Paragraph body for the readable doc (richer structure than body_excerpt).
-    body = _render_paragraphs(soup)
+    # Markdown body for the readable doc (richer structure than body_excerpt).
+    body = _render_markdown(soup)
 
     # Also derive body_excerpt for the PageMeta (shared with other callers).
     for tag in soup(["script", "style", "nav", "footer", "header"]):
