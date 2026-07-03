@@ -16,6 +16,27 @@ links you accept or ignore.
 The name fits the job: a bowerbird gathers found objects and curates them into a
 bower. Same here — found links, curated into a linked knowledge vault.
 
+## What it demonstrates
+
+A production-shaped **agent harness**, built plain-Python-first so the moving
+parts stay legible:
+
+- **Agent loop / lifecycle** — capture → court → peck. Cron-driven, idempotent,
+  resumable from durable state; no orchestration framework hiding the control
+  flow.
+- **LLM-authored eval payloads** — at ingest, Haiku mints a Feynman-style quiz
+  (question + model answer) for each load-bearing concept via structured output.
+  The `peck` loop then runs active recall against it, grading **STRONG / WEAK /
+  WRONG** on a Leitner ladder. *(Auto-grading the recall — LLM-as-judge — is the
+  in-progress step; today the grade is self-scored against the model answer.)*
+- **Cost-tiered model routing** — per-item work runs on **Haiku** (cheap,
+  cron-safe, structured output via `messages.parse`); whole-graph synthesis runs
+  on a **larger model** through Claude Code. Cost shape decides the tier, not
+  convenience.
+- **Production thinking** — the invariants below are enforced in code: additive
+  writes only, human text never clobbered, idempotent dedup, a hard vault-folder
+  boundary, and least blast radius on anything unattended.
+
 ## What it is (and isn't)
 
 - **Is:** the **`research` profile** — a quiet capture loop. Send a link →
@@ -38,7 +59,9 @@ One bot, told apart by **how** you send:
 | You send | Lane | What happens |
 | --- | --- | --- |
 | a bare link | **to-read** | appended to your reading list with a one-line "what is it" (metadata, not a summary) |
+| a link the bot can't read (X, login-walled) | **to-clip** | queued for a browser Web Clipper, then read + filed |
 | a link **+ a note**, or `read:` prefix | **learned** | a clipping is created with your note, plus **proposed** `[[backlinks]]` into your evergreen notes |
+| `tool:` **+ link** | **tools shelf** | appended to a keep-for-later shelf — pure recall, never enters the knowledge graph |
 
 Your one-line "why" is the highest-value input: it turns *note + source* into a
 linked evergreen note — proposed, for you to accept.
@@ -54,7 +77,7 @@ phone ──link──▶ Telegram bot ──(queued)──▶ laptop pulls via 
                                    route ┌────┴────┐ write
                                   to-read│         │learned
                                          ▼         ▼
-                             reading-list.md   Clippings/ + proposed [[links]]
+                             reading-list.md   sources/ + proposed [[links]]
                                               │
                                          receipt back through the bot
 ```
@@ -62,6 +85,27 @@ phone ──link──▶ Telegram bot ──(queued)──▶ laptop pulls via 
 Capture is instant; processing waits until the laptop is awake — fine for a
 reading queue. Pull daily (or also copy links to Telegram **Saved Messages** as
 a backstop) so nothing ages out of the 24h window.
+
+## Design principles
+
+Load-bearing invariants, enforced in code — not aspirations. Full text in
+[`notes/INVARIANTS.md`](notes/INVARIANTS.md).
+
+- **Enhance, never replace.** Your own reading, highlights, and writing are never
+  erased or summarised away. The curated distillation may grow; your thinking is
+  never clobbered — writes are additive only.
+- **Never distill the unread.** Only what you've actually read enters the graph.
+  Unread items get a pointer (title + one line), never a summary. The fluency
+  illusion — mistaking reading for understanding — is the enemy.
+- **Containment.** Owns one vault folder, touches nothing outside it; the folder
+  boundary is asserted in `ingest._assert_writable`.
+- **Least blast radius.** Unattended work is least-privilege and non-destructive;
+  high-stakes or untrusted-web actions are gated behind a deliberate human step.
+- **Nothing is lost.** Nothing is hard-deleted or dropped silently — processed
+  items are archived, unprocessable ones logged with a reason.
+- **Quiet by default; idempotent.** Silent when there's nothing to surface; an
+  already-processed item is never processed twice (Telegram offset + URL dedup +
+  clip content-hash).
 
 ## Quickstart
 
@@ -81,23 +125,15 @@ The vault path auto-resolves from the `notes/` symlink, or set
 Run it on a daily `cron`/`launchd` schedule, or by hand whenever you want to
 process what's piled up.
 
-## Roadmap
+## Status
 
-This is a learning project — building a harness-engineered agent loop, both to
-learn harness engineering and to speed up side projects. Plain Python first, then
-layer on the agent framework:
+Plain-Python capture works end-to-end: Telegram pull → four-lane router →
+guarded vault writes (`sources/` notes + proposed `[[links]]`, entity leaf nodes
+for tools/people), Web Clipper inbox, daily digest.
 
-1. **Base** — prove the loop runs, calls a tool, reads the env.
-2. **Identity** — research-operator: concise, proposes not asserts.
-3. **Memory** — durable facts only: vault conventions, reading interests.
-4. **Telegram** — pull via `getUpdates`. ✅ *(plain Python)*
-5. **Skill: link → clipping note** — the heart of the project. ✅ *(plain Python)*
-6. **One quiet cron** — daily digest; weekly reading-list groom. Silent when
-   there's nothing to surface.
-7. **Profile split** — formalise so the `coding` profile can start.
-
-**Status:** early. Plain-Python ingestion works end-to-end (Telegram pull →
-two-lane router → vault writes). Steps 1–3, 6–7 are next.
+The **grow loop** — `peck`, spaced-rep review over due bowers — runs end-to-end
+with self-scored recall. Next: an **LLM-as-judge** grade so recall is scored
+automatically, then formalise the `research`/`coding` profile split.
 
 ## Contributing
 
