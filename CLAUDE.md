@@ -89,10 +89,10 @@ Synthesis is split by cost shape (decided 2026-06-24):
   **`claude-haiku-4-5`**. The cron pull reading inbox/Telegram and writing
   baseline `sources/` notes + links. Cheap, automatable. Structured output uses
   `messages.parse` with a pydantic model (`llm.ClippingPlan`).
-- **Tier 2 — whole-graph (Claude Code, not this app):** the deep digest and
-  cross-corpus synthesis run on the **Max subscription** via Claude Code,
-  driven by `BowerBird/CLAUDE.md`. No API tokens; you-triggered (`make
-  digest`), never crond (subscription-in-cron is ToS-gray).
+- **Tier 2 — whole-graph (Claude Code, not this app):** the deep `weave` pass —
+  cross-corpus synthesis + lint — runs on the **Max subscription** via Claude
+  Code, driven by `BowerBird/CLAUDE.md`. No API tokens; you-triggered (`make
+  weave`), never crond (subscription-in-cron is ToS-gray).
 
 Keep the Python path Haiku-only; do **not** route whole-graph synthesis through
 the API. Per-lane Tier-1 model is a one-line config change if a lane reads thin.
@@ -113,7 +113,7 @@ src/bower_bird/
   app.py       pull orchestration (Telegram queue + clipper inbox)
   __main__.py  `python -m bower_bird`
 tests/         router + ingest/inbox unit tests (pure logic, no network)
-scripts/       launchd install/uninstall, digest.sh (Claude Code Tier-2)
+scripts/       launchd install/uninstall, weave.sh (Claude Code Tier-2)
 notes/         symlink into the Obsidian vault — planning notes (gitignored)
 ```
 
