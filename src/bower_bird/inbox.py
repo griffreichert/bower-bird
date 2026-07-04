@@ -14,8 +14,6 @@ repo, so it survives the move), synthesise a source note + asserted links, then
 move the original clip to `archive/` (non-destructive).
 """
 
-from __future__ import annotations
-
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -125,7 +123,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
                 meta,
                 "",
                 candidates,
-                model=config.model,
+                model=config.build_model,
                 highlights=marks.highlights,
                 body_urls=body_urls,
             )
@@ -134,16 +132,14 @@ def process_inbox(config: Config, state: State) -> list[str]:
             log.append(f"error {path.name}: {exc}")
             continue
 
-        # Concise (fluff-free) title threads through bower refs + the archive
+        # Concise (fluff-free) title threads through the source ref + the archive
         # name so the graph node, its backlinks, and the cold copy all match.
         display_title = (plan.concise_title or meta.title).strip() or meta.title
-
-        # Mint bowers for load-bearing concepts (gather step).
-        bower_ids: list[str] = []
         source_title = ingest._safe_filename(display_title)
-        for concept in plan.concepts:
-            _, bower_id = ingest.mint_bower(config, concept, source_title)
-            bower_ids.append(f"{concept.handle}:{bower_id[:8]}")
+
+        # Concept pages are left as pure link stubs here — their substance is
+        # written by `weave` (AI territory), and any quiz payload lives in
+        # `learn/`, never in the concept page. Capture does not mint or quiz.
 
         # File named entities (tools, people) as their own leaf nodes.
         entity_ids = ingest.file_entities(config, plan, source_title)
@@ -180,11 +176,10 @@ def process_inbox(config: Config, state: State) -> list[str]:
                 f"{len(marks.highlights)}h/{len(marks.dig)}d/"
                 f"{len(marks.questions)}q/{len(marks.further_links)}l"
             )
-            bowers = ("; bowers: " + ", ".join(bower_ids)) if bower_ids else ""
             entities = ("; entities: " + ", ".join(entity_ids)) if entity_ids else ""
             log.append(
                 f"{path.name} -> sources/{note_path.name} "
-                f"(links: {links}; marks: {marked}{bowers}{entities})"
+                f"(links: {links}; marks: {marked}{entities})"
             )
 
     return log

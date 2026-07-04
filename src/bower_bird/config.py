@@ -14,18 +14,11 @@ Writable paths at runtime: inbox/, trinkets/, sources/, notes/ (brain/bowers/),
 archive/, to-clip.md, tools.md, _inbox.md, digests/.
 """
 
-from __future__ import annotations
-
-import os
-from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
-from dotenv import load_dotenv
-
-# Cheap by design (capture + one daily digest); token budget is not a concern
-# here, so the smallest capable model is the right default. See INVARIANTS:
-# "downscale the model", "session-budget aware".
-DEFAULT_MODEL = "claude-haiku-4-5"
+from pydantic import Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -49,14 +42,49 @@ def _default_vault_path() -> Path | None:
     return None
 
 
-@dataclass(frozen=True)
-class Config:
-    telegram_bot_token: str
-    vault_path: Path
-    model: str
-    state_path: Path
-    fetch_timeout: float
-    queue_limit: int
+class Config(BaseSettings):
+    """Runtime config — secrets/paths/tunables from the environment (or .env).
+
+    The Anthropic SDK reads ANTHROPIC_API_KEY itself, so it is not stored here.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=REPO_ROOT / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    # Two-model pipeline, declared in-package (NOT env-configurable — it's design,
+    # not deployment). `pull` (link identification) is cheap Haiku. `build`
+    # (synthesize_clipping: linking + placement + extraction) runs on Sonnet —
+    # the linking quality is what makes the graph worth reading, and build is
+    # manual so the cost is triggered deliberately.
+    model: ClassVar[str] = "claude-haiku-4-5"
+    build_model: ClassVar[str] = "claude-sonnet-5"
+
+    telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
+    vault_path: Path = Field(
+        default=None, alias="BOWER_VAULT_PATH", validate_default=True
+    )
+    state_path: Path = Field(
+        default=REPO_ROOT / "data" / "state.json", alias="BOWER_STATE_PATH"
+    )
+    fetch_timeout: float = Field(default=15, alias="BOWER_FETCH_TIMEOUT")
+    queue_limit: int = Field(default=100, alias="BOWER_QUEUE_LIMIT")
+
+    @field_validator("vault_path", mode="before")
+    @classmethod
+    def _resolve_vault(cls, v: Path | str | None) -> Path:
+        vault = Path(v).expanduser() if v else _default_vault_path()
+        if vault is None:
+            raise ValueError(
+                "Could not resolve the vault path. Set BOWER_VAULT_PATH, or "
+                "create the notes/ symlink pointing into the Obsidian vault."
+            )
+        if not vault.is_dir():
+            raise ValueError(f"Vault path does not exist: {vault}")
+        return vault
 
     # --- Derived locations inside the owned folder (everything we touch) ---
     @property
@@ -161,35 +189,9 @@ class Config:
 
 
 def load_config() -> Config:
-    load_dotenv(REPO_ROOT / ".env")
-
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    if not token:
-        raise RuntimeError(
-            "TELEGRAM_BOT_TOKEN is not set. Get one from @BotFather and put it "
-            "in .env or the environment."
-        )
-
-    vault_env = os.environ.get("BOWER_VAULT_PATH", "").strip()
-    vault_path = Path(vault_env).expanduser() if vault_env else _default_vault_path()
-    if vault_path is None:
-        raise RuntimeError(
-            "Could not resolve the vault path. Set BOWER_VAULT_PATH, or create "
-            "the notes/ symlink pointing into the Obsidian vault."
-        )
-    if not vault_path.is_dir():
-        raise RuntimeError(f"Vault path does not exist: {vault_path}")
-
-    state_env = os.environ.get("BOWER_STATE_PATH", "").strip()
-    state_path = (
-        Path(state_env).expanduser() if state_env else REPO_ROOT / "data" / "state.json"
-    )
-
-    return Config(
-        telegram_bot_token=token,
-        vault_path=vault_path,
-        model=os.environ.get("BOWER_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL,
-        state_path=state_path,
-        fetch_timeout=float(os.environ.get("BOWER_FETCH_TIMEOUT", "15")),
-        queue_limit=int(os.environ.get("BOWER_QUEUE_LIMIT", "100")),
-    )
+    """Load config from the environment / .env. Raises RuntimeError with a
+    readable message on a missing token or unresolvable vault path."""
+    try:
+        return Config()
+    except ValidationError as exc:
+        raise RuntimeError(str(exc)) from exc
