@@ -526,6 +526,64 @@ def test_pick_source_url() -> None:
     )
 
 
+def test_index_upsert_add_update_idempotent() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+
+        ingest.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
+        text = cfg.index_path.read_text(encoding="utf-8")
+        check(
+            "- [[Agentic loops]] · ai · how agents iterate" in text,
+            "index line added",
+        )
+
+        # Second identical call is a no-op (no duplicate line).
+        ingest.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
+        text = cfg.index_path.read_text(encoding="utf-8")
+        check(
+            text.count("[[Agentic loops]]") == 1, "identical upsert does not duplicate"
+        )
+
+        # Changing the payload replaces the line in place (still one line).
+        ingest.upsert_index_line(
+            cfg, "Agentic loops", "ai", "the agent iterate-verify loop"
+        )
+        text = cfg.index_path.read_text(encoding="utf-8")
+        check(text.count("[[Agentic loops]]") == 1, "update replaces, not appends")
+        check("the agent iterate-verify loop" in text, "update takes new one-liner")
+        check("how agents iterate" not in text, "old one-liner gone")
+
+        # A title that is a prefix of an existing one is not clobbered.
+        ingest.upsert_index_line(cfg, "Agentic", "ai", "distinct shorter title")
+        text = cfg.index_path.read_text(encoding="utf-8")
+        check(text.count("[[Agentic loops]]") == 1, "prefix title left intact")
+        check(
+            "[[Agentic]] · ai · distinct shorter title" in text,
+            "prefix title added separately",
+        )
+
+        # Empty category/one-liner degrades gracefully (no trailing separators).
+        ingest.upsert_index_line(cfg, "Bare", "", "")
+        text = cfg.index_path.read_text(encoding="utf-8")
+        check("- [[Bare]]\n" in text, "empty fields yield a clean bare line")
+
+
+def test_append_log() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        ingest.append_log(cfg, "built 2 pages")
+        ingest.append_log(cfg, "built 1 page")
+        text = cfg.log_path.read_text(encoding="utf-8")
+        check(
+            "built 2 pages" in text and "built 1 page" in text, "both log lines present"
+        )
+        check(text.count("- `") == 2, "one timestamped line per append")
+
+
 def test_file_entities_creates_leaf_nodes() -> None:
     """Tools/people become unquizzed leaf notes, linked to concepts + source,
     and are NOT seeded into the review store."""
@@ -612,6 +670,8 @@ def main() -> int:
     test_extract_urls()
     test_pick_source_url()
     test_file_entities_creates_leaf_nodes()
+    test_index_upsert_add_update_idempotent()
+    test_append_log()
     if _failures:
         print(f"\n{_failures} failure(s).")
         return 1

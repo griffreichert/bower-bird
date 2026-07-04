@@ -120,9 +120,19 @@ class Config:
         return self.brain_dir / "tools"
 
     @property
-    def topic_index_path(self) -> Path:
-        """The bower map, maintained by Tier-2 (Claude Code)."""
-        return self.brain_dir / "_topic_index.md"
+    def index_path(self) -> Path:
+        """The graph catalog — one line per brain/ page (`[[title]] · category ·
+        one-liner`). `build` upserts it incrementally (O(1) per capture) and
+        reads it as the sole link-candidate lookup, so build cost stays bounded
+        regardless of graph size. `weave` does periodic full repair."""
+        return self.brain_dir / "_index.md"
+
+    @property
+    def log_path(self) -> Path:
+        """Append-only activity log — one line per build (Karpathy's log.md).
+        `weave` reads it to run incrementally (touch only what changed since the
+        last pass) instead of rescanning the whole graph."""
+        return self.brain_dir / "_log.md"
 
     @property
     def archive_dir(self) -> Path:
