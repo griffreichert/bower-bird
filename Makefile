@@ -6,7 +6,7 @@ KERNEL_DISPLAY := bower-bird (uv)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup sync hooks kernel lint format test digest sync-vault schedule unschedule clean
+.PHONY: help setup sync hooks kernel lint format test weave sync-vault schedule unschedule clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -37,13 +37,13 @@ test: ## Run unit tests (router + ingest/inbox + vault-docs drift)
 	uv run python tests/test_ingest.py
 	uv run python tests/test_vault_docs.py
 
-digest: ## Generate the whole-graph digest via Claude Code — Tier 2, subscription
-	scripts/digest.sh
+weave: ## Deep whole-graph synthesis + lint via Claude Code — subscription, manual
+	scripts/weave.sh
 
 sync-vault: ## Copy canonical vault docs (vault/*.md) into the owned BowerBird/ folder
 	scripts/sync-vault.sh
 
-schedule: ## Install launchd agent: telegram + gather every 30 min (override: INTERVAL=<seconds>)
+schedule: ## Install launchd agent: pull every 15 min (override: INTERVAL=<seconds>)
 	scripts/install-launchd.sh $(INTERVAL)
 
 unschedule: ## Remove the launchd agent

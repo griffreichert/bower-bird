@@ -6,15 +6,16 @@
 # wake — exactly the "process when the laptop is awake" model bower-bird wants.
 #
 # One pass does two things:
-#   (1) pull: pull queue → fetch+render → fill inbox/ (+ tool:/to-clip routing)
-#   (2) build: build bowers from trinkets/ → brain/bowers/
+# Runs `pull` only: pull queue → fetch+render → fill inbox/ (+ tool:/to-clip
+# routing). Cheap Haiku capture.
 #
-# peck and forage are NOT run by this job — they remain manual.
+# build/weave/peck/forage are NOT run by this job — they remain manual, so their
+# (Sonnet / subscription) cost is triggered deliberately, not on a timer.
 #
-# Usage: scripts/install-launchd.sh [INTERVAL_SECONDS]   (default: 1800)
+# Usage: scripts/install-launchd.sh [INTERVAL_SECONDS]   (default: 900 = 15 min)
 set -euo pipefail
 
-INTERVAL="${1:-1800}"
+INTERVAL="${1:-900}"
 
 LABEL="com.griffinreichert.bower-bird"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,6 +39,7 @@ cat > "$PLIST" <<PLIST_EOF
     <string>python</string>
     <string>-m</string>
     <string>bower_bird</string>
+    <string>pull</string>
   </array>
   <key>WorkingDirectory</key>
   <string>$REPO_ROOT</string>
@@ -56,6 +58,6 @@ launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
 INTERVAL_MIN=$(( INTERVAL / 60 ))
-printf 'Installed %s — pull + build every %d min (%ds)\n' "$LABEL" "$INTERVAL_MIN" "$INTERVAL"
+printf 'Installed %s — pull every %d min (%ds)\n' "$LABEL" "$INTERVAL_MIN" "$INTERVAL"
 printf 'Plist: %s\n' "$PLIST"
 printf 'Test now:  launchctl start %s   (then tail data/launchd.log)\n' "$LABEL"
