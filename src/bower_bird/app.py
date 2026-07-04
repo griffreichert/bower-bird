@@ -68,7 +68,7 @@ def _handle(config: Config, state: State, text: str) -> str:
 
     # Lane.LEARNED — the user has read it and added a note.
     meta = fetch(url, timeout=config.fetch_timeout)
-    candidates = ingest.list_concept_notes(config)
+    candidates = ingest.read_index(config)
     plan = synthesize_clipping(meta, parsed.note, candidates, model=config.model)
     path = ingest.create_source_note(config, meta, plan, note=parsed.note)
     state.mark_url(url)
@@ -77,6 +77,14 @@ def _handle(config: Config, state: State, text: str) -> str:
 
     # File named tool/person entities as their own leaf nodes (same as the clip lane).
     ingest.file_entities(config, plan, path.stem)
+
+    # Catalog the source + ensure concept stubs in the index; log the build.
+    ingest.upsert_index_line(config, path.stem, plan.category, plan.description)
+    for topic in plan.topics:
+        ingest.upsert_index_line(config, topic, plan.category, "", insert_only=True)
+    ingest.append_log(
+        config, f"build sources/{path.name} [{plan.category or 'uncategorized'}]"
+    )
 
     links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
     return f"Filed: {meta.title}\nLinked: {links}"
