@@ -118,6 +118,89 @@ def _append_link(config: Config, path: Path, target_title: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# graph catalog (_index.md) + activity log (_log.md)
+# --------------------------------------------------------------------------- #
+
+_INDEX_HEADER = """\
+---
+title: Index
+bower: generated
+tags:
+  - index
+---
+# Index
+
+The graph catalog — one line per brain/ page. `build` upserts this incrementally
+and reads it as its link-candidate lookup; `weave` repairs it. Format:
+`- [[title]] · category · one-liner`.
+
+## Pages
+"""
+
+_LOG_HEADER = """\
+---
+title: Log
+bower: generated
+tags:
+  - log
+---
+# Log
+
+Append-only activity log — one line per build. `weave` reads it to run
+incrementally (touch only what changed since the last pass).
+
+"""
+
+
+def read_index(config: Config) -> str:
+    """Return the raw `_index.md` catalog, or '' if it doesn't exist yet.
+
+    This is the ONLY link-candidate source `build` reads — a compact one-line-
+    per-page catalog — so per-item cost stays bounded as the graph grows (vs.
+    `list_concept_notes`, which reads every page title, O(N))."""
+    path = config.index_path
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def upsert_index_line(config: Config, title: str, category: str, oneline: str) -> None:
+    """Add or replace this page's catalog line, keyed on `[[title]]`. Idempotent.
+
+    Incremental: touches only this one line (O(1)), never rescans the graph —
+    `weave` owns periodic full repair. Seeds the header on first write."""
+    path = config.index_path
+    _assert_writable(config, path)
+    line = f"- [[{title}]] · {category} · {oneline}".rstrip(" ·")
+
+    text = path.read_text(encoding="utf-8") if path.exists() else _INDEX_HEADER
+    # Match an existing line for this exact title (start-anchored so a title that
+    # is a prefix of another can't be clobbered).
+    existing = re.compile(rf"^- \[\[{re.escape(title)}\]\](?: ·.*)?$", re.MULTILINE)
+    match = existing.search(text)
+    if match:
+        if match.group(0) == line:
+            return  # already current — no write
+        text = existing.sub(lambda _m: line, text, count=1)
+    else:
+        sep = "" if text.endswith("\n") else "\n"
+        text = f"{text}{sep}{line}\n"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def append_log(config: Config, message: str) -> None:
+    """Append a timestamped line to `_log.md`. Seeds the header on first write."""
+    path = config.log_path
+    _assert_writable(config, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text(_LOG_HEADER, encoding="utf-8")
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(f"- `{stamp}` {message}\n")
+
+
+# --------------------------------------------------------------------------- #
 # clip queue (links httpx can't read — open in a browser + Web Clipper)
 # --------------------------------------------------------------------------- #
 
