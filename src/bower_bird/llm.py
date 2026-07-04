@@ -105,6 +105,14 @@ class ClippingPlan(BaseModel):
     description: str = Field(
         description="One factual line: what this source is (type + topic)."
     )
+    category: str = Field(
+        default="",
+        description="A single top-level category for this source — a short "
+        "lowercase noun the graph can group by (e.g. 'ai', 'writing', 'systems', "
+        "'biology'). REUSE a category already present in the candidate index "
+        "below when one reasonably fits; only coin a new one when none do. This "
+        "is the index's grouping column, so keep the vocabulary small.",
+    )
     topics: list[str] = Field(
         description="The coarse topic notes this source feeds — a rich source "
         "usually feeds SEVERAL. Each is a SHORT, REUSABLE concept handle: a 2-5 "
@@ -179,12 +187,15 @@ def describe_link(meta: PageMeta, model: str) -> str:
 def synthesize_clipping(
     meta: PageMeta,
     note: str,
-    candidate_links: list[str],
+    candidate_index: str,
     model: str,
     highlights: list[str] | None = None,
     body_urls: list[str] | None = None,
 ) -> ClippingPlan:
-    candidates = "\n".join(f"- {c}" for c in candidate_links) or "(none yet)"
+    # candidate_index is the raw `_index.md` catalog — one line per existing
+    # brain/ page (`- [[title]] · category · one-liner`). It is the single,
+    # compact link-candidate + category source (no per-page reads).
+    candidates = candidate_index.strip() or "(none yet)"
     highlights = highlights or []
     body_urls = body_urls or []
     highlight_block = (
@@ -209,11 +220,14 @@ def synthesize_clipping(
         "vault. The vault links ideas with [[wikilinks]] and tags; folders don't "
         "matter.\n\n"
         "List the coarse topics this source feeds — a rich source usually feeds "
-        "SEVERAL (don't force it down to one). PREFER the existing evergreen "
-        "notes listed as candidates; add a new topic only when none fits and "
-        "it's broad enough to reuse. Each topic is a SHORT, REUSABLE concept "
-        "handle (a 2-5 word noun phrase many sources could link to, e.g. "
-        "'Agentic loops'), NOT a sentence or claim, NOT the source title.\n\n"
+        "SEVERAL (don't force it down to one). PREFER titles already in the index "
+        "below; add a new topic only when none fits and it's broad enough to "
+        "reuse. Each topic is a SHORT, REUSABLE concept handle (a 2-5 word noun "
+        "phrase many sources could link to, e.g. 'Agentic loops'), NOT a sentence "
+        "or claim, NOT the source title.\n\n"
+        "Assign a single top-level CATEGORY (a short lowercase noun). REUSE a "
+        "category already present in the index below when one fits; only coin a "
+        "new one when none do — keep the category vocabulary small.\n\n"
         "Then distill the source's KEY IDEAS — the load-bearing substance a "
         "reader should retain (3-6 concrete bullets). Draw them ONLY from the "
         "body and highlights below; never invent ideas from your own prior "
@@ -235,7 +249,8 @@ def synthesize_clipping(
         f"My note (why it matters): {note or '(none)'}\n"
         f"{highlight_block}"
         f"{links_block}\n"
-        f"Existing evergreen notes (candidates for backlinks):\n{candidates}\n\n"
+        f"Graph index (existing pages — link candidates + their categories):\n"
+        f"{candidates}\n\n"
         f"Source excerpt (context only):\n{meta.body_excerpt[:3000]}"
     )
     response = _client().messages.parse(
@@ -250,6 +265,7 @@ def synthesize_clipping(
         return ClippingPlan(
             concise_title=meta.title,
             description=meta.title,
+            category="",
             topics=[],
             key_ideas=[],
             concepts=[],

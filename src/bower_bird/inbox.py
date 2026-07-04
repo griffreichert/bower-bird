@@ -120,7 +120,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
 
         try:
             marks = extract_marks(body, self_url=meta.url)
-            candidates = ingest.list_concept_notes(config)
+            candidates = ingest.read_index(config)
             plan = synthesize_clipping(
                 meta,
                 "",
@@ -147,6 +147,24 @@ def process_inbox(config: Config, state: State) -> list[str]:
 
         # File named entities (tools, people) as their own leaf nodes.
         entity_ids = ingest.file_entities(config, plan, source_title)
+
+        # Catalog the new source in the index (full line) and ensure each linked
+        # concept has a stub line (insert-only — never clobber weave's richer
+        # text). Log the build. Only for a freshly written source note.
+        if note_path is not None:
+            ingest.upsert_index_line(
+                config, source_title, plan.category, plan.description
+            )
+            for topic in plan.topics:
+                ingest.upsert_index_line(
+                    config, topic, plan.category, "", insert_only=True
+                )
+            ingest.append_log(
+                config,
+                f"build sources/{note_path.name} "
+                f"[{plan.category or 'uncategorized'}] "
+                f"links={len(plan.topics)} entities={len(entity_ids)}",
+            )
 
         state.mark_hash(digest)
         if meta.url:

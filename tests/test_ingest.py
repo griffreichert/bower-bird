@@ -569,6 +569,22 @@ def test_index_upsert_add_update_idempotent() -> None:
         text = cfg.index_path.read_text(encoding="utf-8")
         check("- [[Bare]]\n" in text, "empty fields yield a clean bare line")
 
+        # insert_only: never clobbers an existing (richer) line...
+        ingest.upsert_index_line(
+            cfg, "Agentic loops", "xx", "thin stub", insert_only=True
+        )
+        text = cfg.index_path.read_text(encoding="utf-8")
+        check(
+            "the agent iterate-verify loop" in text and "thin stub" not in text,
+            "insert_only leaves the existing richer line untouched",
+        )
+        # ...but does add a line when the title is absent.
+        ingest.upsert_index_line(cfg, "Brand New", "ai", "fresh stub", insert_only=True)
+        text = cfg.index_path.read_text(encoding="utf-8")
+        check(
+            "[[Brand New]] · ai · fresh stub" in text, "insert_only adds absent title"
+        )
+
 
 def test_append_log() -> None:
     with tempfile.TemporaryDirectory() as d:

@@ -25,7 +25,6 @@ from bower_bird.marks import Marks
 from bower_bird.review import ReviewStore
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
-_SKIP_NOTE_STEMS = {"_index", "_archive", "_template", "__init__"}
 _LINKS_HEADING = "## Links"
 
 
@@ -48,21 +47,6 @@ def _safe_filename(title: str) -> str:
 
 def _today() -> str:
     return datetime.now().date().isoformat()
-
-
-def list_concept_notes(config: Config) -> list[str]:
-    """Concept-note titles across all bowers — candidates for backlinks.
-
-    Recurses brain/bowers/ since concepts live in topical subfolders.
-    """
-    if not config.notes_dir.is_dir():
-        return []
-    titles: list[str] = []
-    for path in sorted(config.notes_dir.rglob("*.md")):
-        if path.stem in _SKIP_NOTE_STEMS:
-            continue
-        titles.append(path.stem)
-    return titles
 
 
 def find_concept_path(config: Config, title: str) -> Path:
@@ -155,18 +139,24 @@ incrementally (touch only what changed since the last pass).
 def read_index(config: Config) -> str:
     """Return the raw `_index.md` catalog, or '' if it doesn't exist yet.
 
-    This is the ONLY link-candidate source `build` reads — a compact one-line-
-    per-page catalog — so per-item cost stays bounded as the graph grows (vs.
-    `list_concept_notes`, which reads every page title, O(N))."""
+    This is the ONLY link-candidate source `build` reads — a single compact
+    catalog file (one line per page) — so per-item cost stays bounded as the
+    graph grows, instead of rglob-ing and opening every page to read its title."""
     path = config.index_path
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-def upsert_index_line(config: Config, title: str, category: str, oneline: str) -> None:
+def upsert_index_line(
+    config: Config, title: str, category: str, oneline: str, insert_only: bool = False
+) -> None:
     """Add or replace this page's catalog line, keyed on `[[title]]`. Idempotent.
 
     Incremental: touches only this one line (O(1)), never rescans the graph —
-    `weave` owns periodic full repair. Seeds the header on first write."""
+    `weave` owns periodic full repair. Seeds the header on first write.
+
+    `insert_only=True` inserts a line only when the title is absent and leaves an
+    existing line untouched — used for concept stubs at capture, so a thin
+    capture-time line never clobbers a richer one weave has already written."""
     path = config.index_path
     _assert_writable(config, path)
     line = f"- [[{title}]] · {category} · {oneline}".rstrip(" ·")
@@ -177,8 +167,8 @@ def upsert_index_line(config: Config, title: str, category: str, oneline: str) -
     existing = re.compile(rf"^- \[\[{re.escape(title)}\]\](?: ·.*)?$", re.MULTILINE)
     match = existing.search(text)
     if match:
-        if match.group(0) == line:
-            return  # already current — no write
+        if insert_only or match.group(0) == line:
+            return  # present already (insert_only) or unchanged — no write
         text = existing.sub(lambda _m: line, text, count=1)
     else:
         sep = "" if text.endswith("\n") else "\n"
