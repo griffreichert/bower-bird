@@ -7,8 +7,6 @@ folder. Run it from a launchd job (e.g. daily) or by hand. Designed to finish
 within the current session — no long-poll loop.
 """
 
-from __future__ import annotations
-
 from bower_bird import inbox, ingest, telegram
 from bower_bird.config import Config, load_config
 from bower_bird.fetch import fetch, fetch_rendered, needs_clipping
@@ -69,7 +67,7 @@ def _handle(config: Config, state: State, text: str) -> str:
     # Lane.LEARNED — the user has read it and added a note.
     meta = fetch(url, timeout=config.fetch_timeout)
     candidates = ingest.read_index(config)
-    plan = synthesize_clipping(meta, parsed.note, candidates, model=config.model)
+    plan = synthesize_clipping(meta, parsed.note, candidates, model=config.build_model)
     path = ingest.create_source_note(config, meta, plan, note=parsed.note)
     state.mark_url(url)
     if path is None:

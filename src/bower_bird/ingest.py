@@ -11,8 +11,6 @@ strictly additive append (`_append_link`) — so nothing a human authored is eve
 clobbered.
 """
 
-from __future__ import annotations
-
 import re
 import uuid
 from datetime import datetime

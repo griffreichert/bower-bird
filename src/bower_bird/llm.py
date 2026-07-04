@@ -13,8 +13,6 @@ The clipping contract is a pydantic model; `messages.parse` derives the JSON
 schema from it and validates the response back into the model.
 """
 
-from __future__ import annotations
-
 import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -131,13 +129,6 @@ class ClippingPlan(BaseModel):
         "invented from prior knowledge of the topic. [] if the body is too thin "
         "to extract real ideas (never pad).",
     )
-    concepts: list[FeynmanConcept] = Field(
-        default_factory=list,
-        description="Feynman payload for the LOAD-BEARING concepts only — the "
-        "1-3 ideas this source most clearly illuminates. Skip minor topics. "
-        "Each handle MUST appear in the topics list. [] if highlights are thin "
-        "or no concept is clear enough to quiz on.",
-    )
     tools: list[EntityRef] = Field(
         default_factory=list,
         description="Tools named in this source — repos, libraries, plugins, "
@@ -233,12 +224,6 @@ def synthesize_clipping(
         "body and highlights below; never invent ideas from your own prior "
         "knowledge of the topic, and give [] if the body is too thin to extract "
         "real ideas.\n\n"
-        "Also provide a Feynman payload for the 1-3 LOAD-BEARING concepts only "
-        "(the ideas this source most sharply illuminates — skip minor ones). "
-        "Each concept needs: handle (must match a topic above), a 1-line plain "
-        "definition, a 1-line why-it-matters, a test question that requires real "
-        "grasp, and a model answer at the level of a thoughtful 12-year-old. "
-        "Skip concepts where the source is too thin to support a graded answer.\n\n"
         "Also extract named ENTITIES that deserve their own node: TOOLS (repos, "
         "libraries, plugins, products — e.g. 'roboflow/supervision') and PEOPLE "
         "(authors, creators, researchers, figures). Give each its provenance URL "
@@ -268,6 +253,5 @@ def synthesize_clipping(
             category="",
             topics=[],
             key_ideas=[],
-            concepts=[],
         )
     return plan
