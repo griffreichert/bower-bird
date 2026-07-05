@@ -12,6 +12,17 @@ all optional, all extracted from the clip's markdown body:
   fold into the same question.
 - ``[anchor](url)``  — outbound links the article references → leads to capture.
 
+Plus three bare *directive* tags (opt-in, deliberate — like ``#dig``):
+
+- ``#person`` on/near a line — promote the person named there into a
+  ``brain/people/`` node. Anchors person-extraction (default OFF), so ordinary
+  bylines don't auto-mint. Placed inline (``Jerry Liu ... #person``) or on its
+  own line under the mention (``...Steve Jobs was cool`` ⏎ ``#person``).
+- ``#promote`` — file the full source body straight into the graph (not a thin
+  node), and freeze it.
+- ``#frozen`` — mark this node's prose immutable (weave adds links, never
+  rewrites). ``#promote`` implies ``#frozen``.
+
 Pure text logic — no network, no vault writes. The Tier-1 pass lifts these into
 the source note; Tier-2 grows highlights into nest concepts and routes
 dig/questions into the digest's gaps & next-reads.
@@ -31,8 +42,27 @@ _IMAGE_URL = re.compile(
 )
 _BARE_URL = re.compile(r"https?://[^\s)\]<>]+")
 _DIG = re.compile(r"#dig\b")  # \b so #digest / #digging don't match
+_PERSON = re.compile(r"#person\b")  # \b so #personal doesn't match
+_PROMOTE = re.compile(r"#promote\b")
+_FROZEN = re.compile(r"#frozen\b")
 _QUESTION = re.compile(r"^>\s*\?\s?(.*)$")
 _QUOTE_LINE = re.compile(r"^>\s?(.*)$")
+# Directive tokens carry intent, not content — strip them from stored/synth prose
+# so `#promote` never lands in a node body or biases the model's extraction.
+_DIRECTIVE_TOKEN = re.compile(r"#(?:promote|frozen|person|dig)\b")
+
+
+def strip_directives(body: str) -> str:
+    """Remove directive tags from a body, leaving the reader's prose clean.
+
+    Extract marks from the RAW body first — this runs after, on the copy that
+    gets synthesised + stored. Tokens are dropped inline (a highlight line keeps
+    its text); blank lines left behind are collapsed.
+    """
+    out = _DIRECTIVE_TOKEN.sub("", body)
+    out = re.sub(r"[ \t]+\n", "\n", out)  # trailing space from a stripped token
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip("\n")
 
 
 @dataclass
@@ -43,6 +73,9 @@ class Marks:
     dig: list[str] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
     further_links: list[tuple[str, str]] = field(default_factory=list)
+    person_anchors: list[str] = field(default_factory=list)  # #person mention text
+    promote: bool = False  # #promote — full body into the graph + freeze
+    frozen: bool = False  # #frozen — prose immutable (promote implies this)
 
     @property
     def empty(self) -> bool:
@@ -68,6 +101,36 @@ def _extract_dig(body: str) -> list[str]:
         cleaned = cleaned.lstrip("#>-*+ \t")
         cleaned = " ".join(cleaned.split())
         out.append(cleaned or "(this note)")
+    return out
+
+
+def _clean_line(text: str) -> str:
+    """Strip a directive tag's line down to its plain mention text."""
+    cleaned = _PERSON.sub("", text)
+    cleaned = _unwrap_highlights(cleaned)
+    cleaned = cleaned.replace("[[", "").replace("]]", "")
+    cleaned = cleaned.lstrip("#>-*+ \t")
+    return " ".join(cleaned.split())
+
+
+def _extract_person(body: str) -> list[str]:
+    """Mention text for each ``#person`` tag — the anchor Haiku resolves a name
+    from. Inline (tag on the mention's line) uses that line; a tag alone on its
+    own line reaches back to the nearest preceding non-empty line.
+    """
+    lines = body.splitlines()
+    out: list[str] = []
+    for i, raw in enumerate(lines):
+        if not _PERSON.search(raw):
+            continue
+        anchor = _clean_line(raw)
+        if not anchor:  # tag stands alone → use the mention above it
+            j = i - 1
+            while j >= 0 and not lines[j].strip():
+                j -= 1
+            anchor = _clean_line(lines[j]) if j >= 0 else ""
+        if anchor:
+            out.append(anchor)
     return out
 
 
@@ -158,4 +221,7 @@ def extract_marks(body: str, self_url: str = "") -> Marks:
         dig=_extract_dig(body),
         questions=_extract_questions(body),
         further_links=_extract_links(body, self_url),
+        person_anchors=_extract_person(body),
+        promote=bool(_PROMOTE.search(body)),
+        frozen=bool(_FROZEN.search(body)) or bool(_PROMOTE.search(body)),
     )

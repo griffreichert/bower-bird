@@ -23,7 +23,8 @@ from bower_bird.marks import Marks
 from bower_bird.review import ReviewStore
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
-_LINKS_HEADING = "## Links"
+_LINKS_HEADING = "## Links"  # concept↔concept relations (sibling ideas)
+_SOURCES_HEADING = "## Sources"  # source/leaf backlinks — click to read origin
 
 
 def _assert_writable(config: Config, path: Path) -> None:
@@ -74,11 +75,17 @@ tags:
 """
 
 
-def _append_link(config: Config, path: Path, target_title: str) -> None:
-    """Append `- [[target]]` under a `## Links` heading. Strictly additive:
-    never edits existing text. When the note doesn't exist yet, seed it with a
-    well-formed concept-note header first (so auto-created notes aren't bare
-    stubs). Idempotent — a link already present is not duplicated."""
+def _append_link(
+    config: Config, path: Path, target_title: str, heading: str = _LINKS_HEADING
+) -> None:
+    """Append `- [[target]]` under `heading`. Strictly additive: never edits
+    existing text. When the note doesn't exist yet, seed it with a well-formed
+    concept-note header first (so auto-created notes aren't bare stubs).
+    Idempotent — a link already present under ANY heading is not duplicated.
+
+    `heading` divides the two kinds of link a node carries: `## Links` for
+    sibling concepts, `## Sources` for the source/leaf notes you click to read
+    the origin. A given target is placed once, in the heading passed here."""
     _assert_writable(config, path)
     line = f"- [[{target_title}]]"
     if path.exists():
@@ -89,11 +96,11 @@ def _append_link(config: Config, path: Path, target_title: str) -> None:
     if line in text:
         return
 
-    if _LINKS_HEADING in text:
-        out = text.replace(f"{_LINKS_HEADING}\n", f"{_LINKS_HEADING}\n{line}\n", 1)
+    if heading in text:
+        out = text.replace(f"{heading}\n", f"{heading}\n{line}\n", 1)
     else:
         sep = "" if text == "" or text.endswith("\n") else "\n"
-        out = f"{text}{sep}\n{_LINKS_HEADING}\n{line}\n"
+        out = f"{text}{sep}\n{heading}\n{line}\n"
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(out, encoding="utf-8")
@@ -380,7 +387,7 @@ title: "{title}"
 source: "{url}"
 created: {today}
 description: "{description}"
-bower: generated
+{author_line}bower: generated
 tags:
 {tags}
 ---
@@ -389,10 +396,14 @@ tags:
 
 
 def _source_tags(marks: Marks) -> str:
-    """`source`, plus `dig` when the reader flagged something to go deeper on."""
+    """`source`, plus `dig` when the reader flagged something to go deeper on,
+    plus `frozen` when the reader pinned the node (`#frozen`/`#promote`) — prose
+    immutable, links stay open."""
     tags = ["source"]
     if marks.dig or marks.questions:
         tags.append("dig")
+    if marks.frozen:
+        tags.append("frozen")
     return "\n".join(f"  - {t}" for t in tags)
 
 
@@ -403,14 +414,17 @@ def create_source_note(
     *,
     note: str = "",
     marks: Marks | None = None,
+    full_body: str = "",
 ) -> Path | None:
     """Write a (thin) source note into sources/ and assert links into the graph.
 
     The note is provenance + the reader's marks — NOT the article body (the full
     clip stays in archive/ cold). `note` is the human's why-it-matters line (the
     Telegram learned lane); `marks` are the highlights/dig/questions/links pulled
-    from a clip. Returns the source-note path, or None if one already exists
-    (filename-level guard; primary dedup is in state).
+    from a clip. `full_body` is written under `## Full text` only when the reader
+    tagged `#promote` (the node keeps the source whole, not just a thin husk).
+    Returns the source-note path, or None if one already exists (filename-level
+    guard; primary dedup is in state).
     """
     marks = marks or Marks()
     config.sources_dir.mkdir(parents=True, exist_ok=True)
@@ -431,12 +445,16 @@ def create_source_note(
         else "- _(no connections yet)_"
     )
 
+    author = (meta.author or plan.author).strip().replace('"', "'")
+    author_line = f'author: "{author}"\n' if author else ""
+
     parts = [
         _SOURCE_FRONTMATTER.format(
             title=display_title.replace('"', "'"),
             url=meta.url,
             today=_today(),
             description=plan.description.replace('"', "'"),
+            author_line=author_line,
             tags=_source_tags(marks),
         ),
         f"## Links\n{backlinks}\n",
@@ -458,14 +476,20 @@ def create_source_note(
     if marks.further_links:
         body = "\n".join(f"- [{a}]({u})" for a, u in marks.further_links)
         parts.append(f"## Further reading\n{body}\n")
+    if marks.promote and full_body.strip():
+        # #promote keeps the source whole in the graph (frozen), not just a husk.
+        parts.append(f"## Full text\n{full_body.strip()}\n")
 
     path.write_text("\n".join(parts), encoding="utf-8")
 
     # Assert reciprocal links into the concept graph (additive only). Link into
     # an existing bower concept where it lives; new ones land flat at the bowers
-    # root for Tier-2 to file.
+    # root for Tier-2 to file. This source lands under the concept's `## Sources`
+    # (click-to-read-origin), kept apart from its sibling-concept `## Links`.
     for target in targets:
-        _append_link(config, find_concept_path(config, target), source_title)
+        _append_link(
+            config, find_concept_path(config, target), source_title, _SOURCES_HEADING
+        )
 
     return path
 
@@ -518,10 +542,12 @@ def create_leaf_note(
         path.write_text(body, encoding="utf-8")
 
     # Link into the concept graph (reciprocal, additive) + back to the source.
+    # The leaf lists its concepts under `## Links`; on the concept + source it is
+    # itself a reference node, so it lands under their `## Sources`.
     for topic in entity.topics:
         _append_link(config, path, topic)
-        _append_link(config, find_concept_path(config, topic), safe)
-    _append_link(config, path, source_title)
+        _append_link(config, find_concept_path(config, topic), safe, _SOURCES_HEADING)
+    _append_link(config, path, source_title, _SOURCES_HEADING)
     return path
 
 
@@ -537,9 +563,10 @@ def file_entities(config: Config, plan: ClippingPlan, source_title: str) -> list
             if not entity.name.strip():
                 continue
             leaf = create_leaf_note(config, kind, entity, source_title)
-            # Surface the leaf on the source note's Links (additive, idempotent).
+            # Surface the leaf on the source note under `## Sources` (a reference
+            # node, not a sibling concept). Additive, idempotent.
             if source_path.exists():
-                _append_link(config, source_path, leaf.stem)
+                _append_link(config, source_path, leaf.stem, _SOURCES_HEADING)
             filed.append(f"{kind}:{leaf.stem}")
     return filed
 
@@ -655,8 +682,9 @@ def mint_bower(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
-    # Assert the backlink from this bower to its source (additive, idempotent).
-    _append_link(config, path, source_title)
+    # Assert the backlink from this bower to its source under `## Sources`
+    # (click-to-read-origin), kept apart from sibling-concept `## Links`.
+    _append_link(config, path, source_title, _SOURCES_HEADING)
 
     # Seed the review store for newly minted bowers (idempotent — existing
     # entries are left untouched). Persisted immediately so the vault file

@@ -72,6 +72,10 @@ class Config(BaseSettings):
     )
     fetch_timeout: float = Field(default=15, alias="BOWER_FETCH_TIMEOUT")
     queue_limit: int = Field(default=100, alias="BOWER_QUEUE_LIMIT")
+    # `bb prune` only offers archived husks older than this. The window exists to
+    # eyeball thin extractions before the cold original is gone (build can starve
+    # on thin bodies) — don't drop it to 0.
+    archive_ttl_days: int = Field(default=30, alias="BOWER_ARCHIVE_TTL_DAYS")
 
     @field_validator("vault_path", mode="before")
     @classmethod
