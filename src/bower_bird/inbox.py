@@ -22,7 +22,12 @@ from bower_bird import ingest
 from bower_bird.config import Config
 from bower_bird.fetch import PageMeta
 from bower_bird.llm import synthesize_clipping
-from bower_bird.marks import extract_marks, extract_urls, pick_source_url
+from bower_bird.marks import (
+    extract_marks,
+    extract_urls,
+    pick_source_url,
+    strip_directives,
+)
 from bower_bird.state import State, content_hash
 
 _BODY_LIMIT = 6000
@@ -64,6 +69,7 @@ def _clip_to_meta(
         title=fm.get("title") or path.stem,
         description=fm.get("description", ""),
         body_excerpt=body[:_BODY_LIMIT],
+        author=fm.get("author", ""),
     )
 
 
@@ -117,7 +123,12 @@ def process_inbox(config: Config, state: State) -> list[str]:
             continue
 
         try:
+            # Marks come from the RAW body (they carry the directive tokens);
+            # everything synthesised or stored uses the cleaned copy so `#promote`
+            # et al. never leak into the node or bias extraction.
             marks = extract_marks(body, self_url=meta.url)
+            clean = strip_directives(body)
+            meta = meta.model_copy(update={"body_excerpt": clean[:_BODY_LIMIT]})
             candidates = ingest.read_index(config)
             plan = synthesize_clipping(
                 meta,
@@ -126,8 +137,15 @@ def process_inbox(config: Config, state: State) -> list[str]:
                 model=config.build_model,
                 highlights=marks.highlights,
                 body_urls=body_urls,
+                person_anchors=marks.person_anchors,
             )
-            note_path = ingest.create_source_note(config, meta, plan, marks=marks)
+            # Belt for the prompt gate: no #person tag → never mint a person leaf,
+            # whatever the model returned.
+            if not marks.person_anchors:
+                plan.people = []
+            note_path = ingest.create_source_note(
+                config, meta, plan, marks=marks, full_body=clean
+            )
         except Exception as exc:  # noqa: BLE001 — one bad clip must not stall the rest
             log.append(f"error {path.name}: {exc}")
             continue
@@ -176,6 +194,10 @@ def process_inbox(config: Config, state: State) -> list[str]:
                 f"{len(marks.highlights)}h/{len(marks.dig)}d/"
                 f"{len(marks.questions)}q/{len(marks.further_links)}l"
             )
+            if marks.promote:
+                marked += "/promote"
+            elif marks.frozen:
+                marked += "/frozen"
             entities = ("; entities: " + ", ".join(entity_ids)) if entity_ids else ""
             log.append(
                 f"{path.name} -> sources/{note_path.name} "

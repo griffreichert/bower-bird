@@ -103,6 +103,13 @@ class ClippingPlan(BaseModel):
     description: str = Field(
         description="One factual line: what this source is (type + topic)."
     )
+    author: str = Field(
+        default="",
+        description="The source's author / byline, if the body or note names one "
+        "(e.g. 'Paul Graham', 'Jerry Liu'). This is attribution metadata, NOT a "
+        "request to make a person node. Empty string if no author is evident — "
+        "never guess.",
+    )
     category: str = Field(
         default="",
         description="A single top-level category for this source — a short "
@@ -137,9 +144,10 @@ class ClippingPlan(BaseModel):
     )
     people: list[EntityRef] = Field(
         default_factory=list,
-        description="People named in this source worth their own node — "
-        "authors, creators, researchers, figures. Attach their profile/author "
-        "URL from the supplied links. [] if none.",
+        description="ONLY the people the reader explicitly tagged with #person "
+        "(their mention text is supplied below). Resolve each to a full name and "
+        "attach the profile URL from the supplied links. Do NOT add authors or "
+        "other names the reader did not tag. [] when no #person tags are given.",
     )
 
 
@@ -182,6 +190,7 @@ def synthesize_clipping(
     model: str,
     highlights: list[str] | None = None,
     body_urls: list[str] | None = None,
+    person_anchors: list[str] | None = None,
 ) -> ClippingPlan:
     # candidate_index is the raw `_index.md` catalog — one line per existing
     # brain/ page (`- [[title]] · category · one-liner`). It is the single,
@@ -189,6 +198,16 @@ def synthesize_clipping(
     candidates = candidate_index.strip() or "(none yet)"
     highlights = highlights or []
     body_urls = body_urls or []
+    person_anchors = person_anchors or []
+    person_block = (
+        "\nThe reader TAGGED these people with #person — extract each as a person "
+        "entity (resolve the full name from the mention + context, attach a "
+        "profile URL if one is in the links above):\n"
+        + "\n".join(f"- {a}" for a in person_anchors)
+        + "\n"
+        if person_anchors
+        else "\nThe reader tagged NO people (#person) — return people: [].\n"
+    )
     highlight_block = (
         "\nThe reader HIGHLIGHTED these passages — this is the signal for what "
         "mattered to them. Anchor your proposed concept and backlinks on these, "
@@ -224,15 +243,19 @@ def synthesize_clipping(
         "body and highlights below; never invent ideas from your own prior "
         "knowledge of the topic, and give [] if the body is too thin to extract "
         "real ideas.\n\n"
-        "Also extract named ENTITIES that deserve their own node: TOOLS (repos, "
-        "libraries, plugins, products — e.g. 'roboflow/supervision') and PEOPLE "
-        "(authors, creators, researchers, figures). Give each its provenance URL "
-        "from the supplied links, a one-line note, and the topics it connects "
-        "to. Extract only genuinely named things — [] if none.\n\n"
+        "Extract TOOLS named in this source that deserve their own node (repos, "
+        "libraries, plugins, products — e.g. 'roboflow/supervision'); give each "
+        "its provenance URL from the supplied links, a one-line note, and the "
+        "topics it connects to. [] if none.\n\n"
+        "For PEOPLE, extract ONLY those the reader tagged with #person (listed "
+        "below) — not every author or name mentioned. Separately, identify the "
+        "source's AUTHOR (byline) for the author field — this is attribution, not "
+        "a person node. Leave author '' if none is evident.\n\n"
         f"Source URL: {meta.url}\n"
         f"Source title: {meta.title}\n"
         f"My note (why it matters): {note or '(none)'}\n"
         f"{highlight_block}"
+        f"{person_block}"
         f"{links_block}\n"
         f"Graph index (existing pages — link candidates + their categories):\n"
         f"{candidates}\n\n"

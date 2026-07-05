@@ -251,6 +251,119 @@ def test_dig_word_boundary() -> None:
     check(m.dig == [], "#digest / #digging do not trigger #dig")
 
 
+def test_directive_marks() -> None:
+    # inline #person on the mention line; #promote implies frozen
+    body = (
+        "Jerry Liu is a cofounder/CEO of [[llamaindex]] #person\n"
+        "some content\n"
+        "#promote\n"
+    )
+    m = extract_marks(body)
+    check(
+        m.person_anchors == ["Jerry Liu is a cofounder/CEO of llamaindex"],
+        "#person anchor = mention line, tag + wikilink stripped",
+    )
+    check(m.promote is True, "#promote flagged")
+    check(m.frozen is True, "#promote implies frozen")
+
+    # #person alone on a line reaches back to the mention above it
+    m2 = extract_marks("the ceo of apple steve jobs was a cool guy\n\n#person\n")
+    check(
+        m2.person_anchors == ["the ceo of apple steve jobs was a cool guy"],
+        "standalone #person reaches back to prior non-empty line",
+    )
+
+    # no directives → all off, #personal doesn't trigger #person
+    m3 = extract_marks("a #personal note, nothing tagged\n")
+    check(m3.person_anchors == [], "#personal does not trigger #person")
+    check(not m3.promote and not m3.frozen, "no promote/frozen without tags")
+
+    # bare #frozen without promote
+    m4 = extract_marks("pin this\n#frozen\n")
+    check(m4.frozen and not m4.promote, "#frozen alone freezes without promoting")
+
+
+def test_source_note_author_and_frozen() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        meta = PageMeta(
+            url="https://x.com/jerryjliu0",
+            title="Retrieval Harness",
+            description="",
+            body_excerpt="full article body here",
+            author="Jerry Liu",
+        )
+        plan = ClippingPlan(
+            concise_title="Retrieval Harness",
+            description="A tweet on agentic retrieval.",
+            category="ai",
+            topics=[],
+            key_ideas=[],
+        )
+        marks = Marks(promote=True, frozen=True)
+        path = ingest.create_source_note(
+            cfg, meta, plan, marks=marks, full_body="full article body here"
+        )
+        text = path.read_text(encoding="utf-8")
+        check('author: "Jerry Liu"' in text, "author byline written to frontmatter")
+        check("  - frozen" in text, "#promote/#frozen adds the frozen tag")
+        check("## Full text" in text, "#promote writes the full body section")
+        check("full article body here" in text, "full body content present")
+
+
+def test_source_note_no_author_no_frozen_by_default() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        meta = PageMeta(
+            url="https://ex.com/a", title="A", description="", body_excerpt="b"
+        )
+        plan = ClippingPlan(
+            concise_title="A", description="desc", category="x", topics=[], key_ideas=[]
+        )
+        path = ingest.create_source_note(cfg, meta, plan, marks=Marks(), full_body="b")
+        text = path.read_text(encoding="utf-8")
+        check("author:" not in text, "no author line when none known")
+        check("frozen" not in text, "no frozen tag without the directive")
+        check("## Full text" not in text, "no full-text section without #promote")
+
+
+def test_source_link_divide() -> None:
+    """A source lands under a concept's ## Sources, not its ## Links (concepts)."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        meta = PageMeta(
+            url="https://ex.com/p", title="Post", description="", body_excerpt="b"
+        )
+        plan = ClippingPlan(
+            concise_title="Post", description="d", topics=["Widgets"], key_ideas=[]
+        )
+        ingest.create_source_note(cfg, meta, plan)
+        concept = (cfg.notes_dir / "Widgets.md").read_text(encoding="utf-8")
+        check("## Sources" in concept, "concept has a Sources heading")
+        check(
+            "## Sources" in concept and "[[Post]]" in concept.split("## Sources", 1)[1],
+            "source backlink sits under ## Sources",
+        )
+
+
+def test_strip_directives() -> None:
+    from bower_bird.marks import strip_directives
+
+    body = "#promote\n\nreal prose here\n==kept== line #dig\n#frozen"
+    out = strip_directives(body)
+    check("#promote" not in out, "#promote token stripped")
+    check("#dig" not in out and "#frozen" not in out, "all directive tokens stripped")
+    check("real prose here" in out, "prose retained")
+    check("==kept== line" in out, "inline directive line keeps its text")
+    check("\n\n\n" not in out, "blank lines left by stripping collapsed")
+
+
 def test_fetch_helpers() -> None:
     check(needs_clipping("https://x.com/a/status/1"), "x.com needs clipping")
     check(needs_clipping("https://twitter.com/a"), "twitter.com needs clipping")
@@ -307,7 +420,11 @@ def test_mint_bower_new() -> None:
         check(concept.test_question in text, "test question written")
         check(concept.model_answer[:30] in text, "model answer written")
         check("- [[My Source]]" in text, "source backlink asserted")
-        check("## Links" in text, "links section present")
+        check("## Sources" in text, "source backlink under ## Sources, not ## Links")
+        check(
+            text.index("## Sources") < text.index("- [[My Source]]"),
+            "source sits under the Sources heading",
+        )
 
 
 def test_mint_bower_idempotent_id() -> None:
@@ -673,6 +790,11 @@ def main() -> int:
     test_parse_clip()
     test_extract_marks()
     test_dig_word_boundary()
+    test_directive_marks()
+    test_source_note_author_and_frozen()
+    test_source_note_no_author_no_frozen_by_default()
+    test_source_link_divide()
+    test_strip_directives()
     test_fetch_helpers()
     test_conflict_files_skipped()
     test_mint_bower_new()

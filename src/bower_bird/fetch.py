@@ -41,6 +41,7 @@ class PageMeta(BaseModel):
     title: str
     description: str
     body_excerpt: str  # only used by the learned lane
+    author: str = ""  # byline, when the page/clip exposes one
 
     @property
     def is_thin(self) -> bool:
@@ -109,6 +110,7 @@ def fetch(url: str, timeout: float) -> PageMeta:
     description = _meta_content(
         soup, "og:description", "twitter:description", "description"
     )
+    author = _meta_content(soup, "article:author", "author", "twitter:creator")
 
     for tag in soup(["script", "style", "nav", "footer", "header"]):
         tag.decompose()
@@ -119,6 +121,7 @@ def fetch(url: str, timeout: float) -> PageMeta:
         title=title,
         description=description,
         body_excerpt=body_text[:_MAX_BODY_CHARS],
+        author=author,
     )
 
 
