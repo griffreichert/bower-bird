@@ -10,6 +10,8 @@ doc is a rendered copy, not a summary — the full text is there for the human.
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 from urllib.parse import urlparse
 
 import httpx
@@ -32,6 +34,63 @@ def needs_clipping(url: str) -> bool:
     """True if this URL must be captured via the browser Web Clipper, not httpx."""
     host = urlparse(url).netloc.lower()
     return any(host == d or host.endswith("." + d) for d in _NEEDS_BROWSER)
+
+
+_MAX_REDIRECTS = 5
+
+
+def _is_public_host(host: str) -> bool:
+    """True only if every IP `host` resolves to is publicly routable.
+
+    SSRF guard: URLs come from untrusted Telegram messages, so a fetch must not
+    be steerable at localhost, LAN devices, or cloud-metadata (169.254.169.254).
+    Rejects loopback/private/link-local/reserved/multicast ranges.
+    """
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+def _safe_get(url: str, timeout: float) -> httpx.Response:
+    """GET with an SSRF guard, following redirects manually so every hop is
+    re-validated (a public URL can 30x-redirect into internal space).
+
+    Raises ValueError on a non-http scheme or a non-public host at any hop.
+
+    ponytail: small TOCTOU/DNS-rebind residual — getaddrinfo here and httpx's
+    own resolution are separate lookups. Acceptable for a personal laptop tool;
+    upgrade path is pinning the validated IP into the connection.
+    """
+    with httpx.Client(
+        headers={"User-Agent": _UA}, timeout=timeout, follow_redirects=False
+    ) as client:
+        for _ in range(_MAX_REDIRECTS + 1):
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                raise ValueError(f"blocked non-http(s) scheme: {parsed.scheme}")
+            if not _is_public_host(parsed.hostname or ""):
+                raise ValueError(f"blocked non-public host: {parsed.hostname}")
+            resp = client.get(url)
+            if resp.is_redirect and resp.has_redirect_location:
+                url = str(resp.next_request.url)
+                continue
+            return resp
+    raise ValueError("too many redirects")
 
 
 class PageMeta(BaseModel):
@@ -89,16 +148,11 @@ def _render_markdown(soup: BeautifulSoup) -> str:
 
 def fetch(url: str, timeout: float) -> PageMeta:
     try:
-        resp = httpx.get(
-            url,
-            headers={"User-Agent": _UA},
-            timeout=timeout,
-            follow_redirects=True,
-        )
+        resp = _safe_get(url, timeout)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception:
-        # Non-fatal: an unreachable link still gets captured, just thinner.
+        # Non-fatal: an unreachable or blocked link still gets captured, thinner.
         return PageMeta(url=url, title=url, description="", body_excerpt="")
 
     title = _meta_content(soup, "og:title", "twitter:title")
@@ -136,12 +190,7 @@ def fetch_rendered(url: str, timeout: float) -> tuple[PageMeta, str]:
     check `meta.is_thin` to decide whether to route to the clip queue instead.
     """
     try:
-        resp = httpx.get(
-            url,
-            headers={"User-Agent": _UA},
-            timeout=timeout,
-            follow_redirects=True,
-        )
+        resp = _safe_get(url, timeout)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception:

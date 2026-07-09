@@ -64,6 +64,11 @@ class Config(BaseSettings):
     build_model: ClassVar[str] = "claude-sonnet-5"
 
     telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
+    # Comma/space-separated Telegram chat_ids allowed to drive the bot. A
+    # Telegram bot is publicly addressable by @handle, so an empty allowlist
+    # means ANY sender can trigger fetches/LLM calls/vault writes — set this to
+    # your own chat_id(s) to lock the bot to you. See allowed_chat_id_set.
+    allowed_chat_ids: str = Field(default="", alias="BOWER_ALLOWED_CHAT_IDS")
     vault_path: Path = Field(
         default=None, alias="BOWER_VAULT_PATH", validate_default=True
     )
@@ -89,6 +94,13 @@ class Config(BaseSettings):
         if not vault.is_dir():
             raise ValueError(f"Vault path does not exist: {vault}")
         return vault
+
+    @property
+    def allowed_chat_id_set(self) -> set[int]:
+        """Telegram chat_ids permitted to drive the bot (parsed from
+        allowed_chat_ids). Empty = unlocked: any sender is accepted. Non-empty =
+        every other sender is silently dropped in the pull loop."""
+        return {int(x) for x in self.allowed_chat_ids.replace(",", " ").split()}
 
     # --- Derived locations inside the owned folder (everything we touch) ---
     @property
