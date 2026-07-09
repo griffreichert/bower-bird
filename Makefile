@@ -32,9 +32,12 @@ lint: ## Run ruff lint checks
 format: ## Format code with ruff
 	uv run ruff format .
 
-test: ## Run unit tests (router + ingest/inbox + vault-docs drift)
+test: ## Run unit tests (router + ingest/inbox + resolve/digest/decay + vault-docs drift)
 	uv run python tests/test_router.py
 	uv run python tests/test_ingest.py
+	uv run python tests/test_resolve.py
+	uv run python tests/test_tweet_digest.py
+	uv run python tests/test_let_go.py
 	uv run python tests/test_vault_docs.py
 
 weave: ## Deep whole-graph synthesis + lint via Claude Code — subscription, manual

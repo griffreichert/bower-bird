@@ -59,8 +59,9 @@ One bot, told apart by **how** you send:
 | You send | Lane | What happens |
 | --- | --- | --- |
 | a bare link | **to-read** | appended to your reading list with a one-line "what is it" (metadata, not a summary) |
-| a link the bot can't read (X, login-walled) | **to-clip** | queued for a browser Web Clipper, then read + filed |
-| a link **+ a note**, or `read:` prefix | **learned** | a clipping is created with your note, plus **proposed** `[[backlinks]]` into your evergreen notes |
+| an X/Twitter link | **tweet digest** | tweet text resolved (fxtwitter → syndication fallback) into a batched daily digest doc in `tweets/` — read it like a newsletter, mark what's worth keeping; **only marked tweets enter the graph**, the rest are let go. Already read it on X? Add a note or just the word `read` and it skips the queue |
+| a link the bot can't read or resolve (login-walled) | **to-clip** | queued for a browser Web Clipper, then read + filed |
+| a link **+ a note**, or the word `read` anywhere | **learned** | a clipping is created with your note, plus **proposed** `[[backlinks]]` into your evergreen notes |
 | `tool:` **+ link** | **tools shelf** | appended to a keep-for-later shelf — pure recall, never enters the knowledge graph |
 
 Your one-line "why" is the highest-value input: it turns *note + source* into a

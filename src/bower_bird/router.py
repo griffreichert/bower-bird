@@ -1,15 +1,16 @@
 """Router: tell the lanes apart by *how* the message was sent.
 
-| Send                         | Lane     |
-| ---------------------------- | -------- |
-| `tool:` + link               | tool     |
-| bare link                    | to-read  |
-| link + my note, or `read:`   | learned  |
+| Send                          | Lane     |
+| ----------------------------- | -------- |
+| `tool:` + link                | tool     |
+| bare link                     | to-read  |
+| link + my note, or `read`     | learned  |
 
 The user's one-line "why" is the highest-value input, so anything beyond the
-bare URL (or the explicit `read:` prefix) routes to the learned lane. An
-explicit `tool:` prefix overrides everything — it's a keep-for-later shelf
-item, not knowledge.
+bare URL routes to the learned lane. The word `read` alone (any case, before
+or after the link — the share-sheet flow is link first, then type) is an
+explicit I-read-this marker, not a note. An explicit `tool:` prefix overrides
+everything — it's a keep-for-later shelf item, not knowledge.
 """
 
 from __future__ import annotations
@@ -22,6 +23,9 @@ from pydantic import BaseModel, ConfigDict
 _URL_RE = re.compile(r"https?://\S+")
 _READ_PREFIX_RE = re.compile(r"^\s*read\s*:", re.IGNORECASE)
 _TOOL_PREFIX_RE = re.compile(r"^\s*tool\s*:", re.IGNORECASE)
+# The whole note is just the word "read" (punctuation/whitespace around it OK):
+# an explicit I-read-this marker, not a note worth keeping.
+_READ_TOKEN_RE = re.compile(r"^\W*read\W*$", re.IGNORECASE)
 
 
 class Lane(StrEnum):
@@ -65,6 +69,8 @@ def parse(text: str) -> Parsed:
     url = _strip_trailing_punct(match.group(0))
     note = (body[: match.start()] + body[match.end() :]).strip()
 
+    if _READ_TOKEN_RE.match(note):
+        return Parsed(lane=Lane.LEARNED, url=url, note="")
     if explicit_read or note:
         return Parsed(lane=Lane.LEARNED, url=url, note=note)
     return Parsed(lane=Lane.TO_READ, url=url, note="")

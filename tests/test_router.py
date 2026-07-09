@@ -55,6 +55,33 @@ CASES = [
         "https://github.com/x/y",
         "claude loop plugin",
     ),
+    # bare "read" marker, any case, before or after the link (share-sheet flow:
+    # link lands first, then type "read") -> learned, marker is not a note
+    (
+        "https://x.com/u/status/1 read",
+        Lane.LEARNED,
+        "https://x.com/u/status/1",
+        "",
+    ),
+    (
+        "https://x.com/u/status/1 Read.",
+        Lane.LEARNED,
+        "https://x.com/u/status/1",
+        "",
+    ),
+    (
+        "READ https://x.com/u/status/2",
+        Lane.LEARNED,
+        "https://x.com/u/status/2",
+        "",
+    ),
+    # "read" as an ordinary word inside a real note stays in the note
+    (
+        "great read on caching https://example.com/c2",
+        Lane.LEARNED,
+        "https://example.com/c2",
+        "great read on caching",
+    ),
     # tool: with no link is not collectible -> parked
     ("tool: icon gen thing", Lane.NO_LINK, None, "tool: icon gen thing"),
     # no link
