@@ -227,3 +227,6 @@ __marimo__/
 
 # bower-bird runtime state (telegram offset, dedup) and local secrets
 data/
+
+# deepsec scanner scaffold (transient, security pass)
+.deepsec/

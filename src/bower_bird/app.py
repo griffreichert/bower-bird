@@ -7,6 +7,8 @@ folder. Run it from a launchd job (e.g. daily) or by hand. Designed to finish
 within the current session — no long-poll loop.
 """
 
+import sys
+
 from bower_bird import inbox, ingest, telegram
 from bower_bird.config import Config, load_config
 from bower_bird.fetch import fetch, fetch_rendered, needs_clipping
@@ -119,12 +121,30 @@ def _pull_telegram(config: Config, state: State) -> int:
         timeout=config.fetch_timeout,
     )
 
+    allowed = config.allowed_chat_id_set
+    if not allowed:
+        print(
+            "warning: BOWER_ALLOWED_CHAT_IDS is unset — the bot accepts messages "
+            "from any Telegram sender. Set it to your chat_id to lock the bot.",
+            file=sys.stderr,
+        )
+
     processed = 0
     for update in sorted(updates, key=lambda u: u.update_id):
+        if allowed and update.chat_id not in allowed:
+            # Unauthorized sender: drop silently (don't confirm the bot exists),
+            # but still advance the offset so the message can't replay forever.
+            state.telegram_offset = update.update_id + 1
+            state.save()
+            continue
+
         try:
             receipt = _handle(config, state, update.text)
         except Exception as exc:  # noqa: BLE001 — report, don't crash the run
-            receipt = f"Couldn't process that one: {exc}"
+            # Generic receipt: never reflect internal detail (paths, tokens) to
+            # the sender. Full exception goes to the local cron log only.
+            print(f"error handling update {update.update_id}: {exc}", file=sys.stderr)
+            receipt = "Couldn't process that one."
 
         try:
             telegram.send_message(config.telegram_bot_token, update.chat_id, receipt)
