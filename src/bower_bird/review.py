@@ -201,6 +201,46 @@ def _prompt(msg: str) -> str:
     return input().strip()
 
 
+def _judge(
+    config: Config, question: str, model_answer: str, answer: str
+) -> Grade | None:
+    """Grade the answer via LLM-as-judge, printing the verdict. None if unavailable.
+
+    The judge must never crash a pull-only review, so any failure (no API key,
+    network, refusal) degrades to manual grading.
+    """
+    # ponytail: broad except is intentional — a judge failure falls back to
+    # manual grading, never aborts the session.
+    from bower_bird.llm import judge_answer
+
+    try:
+        verdict = judge_answer(question, model_answer, answer, config.model)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  (judge unavailable: {exc} — grade manually)\n")
+        return None
+    print(f"  Judge: {verdict.grade.upper()} — {verdict.rationale}\n")
+    return verdict.grade
+
+
+def _read_grade(default: Grade | None) -> Grade | None:
+    """Prompt for a grade; enter accepts ``default`` (the judge). None on EOF."""
+    if default is not None:
+        hint = f"  Grade [enter={default}, s/w/x=override]: "
+    else:
+        hint = "  Grade (s=strong / w=weak / x=wrong): "
+    while True:
+        try:
+            raw = _prompt(hint).lower()
+        except EOFError:
+            return None
+        if raw == "" and default is not None:
+            return default
+        grade = _GRADE_ALIASES.get(raw)
+        if grade is not None:
+            return grade
+        print("  Please enter s, w, or x.")
+
+
 def peck(config: Config) -> int:
     """Run an interactive spaced-rep quiz session over due bowers.
 
@@ -247,24 +287,20 @@ def peck(config: Config) -> int:
         print(f"\n  Q: {test_question}\n")
 
         try:
-            _prompt("  Your answer: ")
+            user_answer = _prompt("  Your answer: ")
         except EOFError:
             print("\npeck: session ended early.")
             break
 
         print(f"\n  Model answer:\n  {model_answer}\n")
 
-        grade: Grade | None = None
-        while grade is None:
-            try:
-                raw = _prompt("  Grade (s=strong / w=weak / x=wrong): ").lower()
-            except EOFError:
-                print("\npeck: session ended early.")
-                store.save()
-                return reviewed
-            grade = _GRADE_ALIASES.get(raw)
-            if grade is None:
-                print("  Please enter s, w, or x.")
+        # LLM-as-judge grades the answer; the human accepts (enter) or overrides.
+        default = _judge(config, test_question, model_answer, user_answer)
+        grade = _read_grade(default)
+        if grade is None:  # EOF at the grade prompt
+            print("\npeck: session ended early.")
+            store.save()
+            return reviewed
 
         updated = store.apply_grade(review.id, grade)
         store.save()  # persist after each item — safe against mid-session exit
@@ -317,9 +353,65 @@ def _load_feynman_payloads(
     return result
 
 
-def main(config: Config) -> int:
-    """Entry point called from __main__.py for `python -m bower_bird peck`."""
+def list_due(config: Config) -> int:
+    """Print due bowers as JSON — the read half of the Claude Code peck skill.
+
+    Claude Code calls this, quizzes the user in-chat (grading on the subscription
+    model, not the API), then writes each grade back via ``--grade``.
+    """
+    store = ReviewStore.load(config)
+    due = store.due_today()
+    payloads = _load_feynman_payloads(config, {r.id for r in due})
+    out = []
+    for review in due:
+        payload = payloads.get(review.id)
+        if payload is None:
+            continue
+        title, question, model_answer = payload
+        out.append(
+            {
+                "id": review.id,
+                "title": title,
+                "box": review.box,
+                "question": question,
+                "model_answer": model_answer,
+            }
+        )
+    print(json.dumps(out, indent=2))
+    return 0
+
+
+def grade(config: Config, bower_id: str, raw_grade: str) -> int:
+    """Apply one Leitner grade — the write half of the Claude Code peck skill."""
+    g = _GRADE_ALIASES.get(raw_grade.lower())
+    if g is None:
+        print(f"peck: invalid grade {raw_grade!r} (use strong/weak/wrong).")
+        return 2
+    store = ReviewStore.load(config)
+    if store.get(bower_id) is None:
+        print(f"peck: unknown bower id {bower_id!r}.")
+        return 2
+    updated = store.apply_grade(bower_id, g)
+    store.save()
+    print(
+        json.dumps(
+            {"id": bower_id, "grade": g, "box": updated.box, "due": str(updated.due)}
+        )
+    )
+    return 0
+
+
+def main(config: Config, argv: list[str] | None = None) -> int:
+    """Entry point for `peck [--list-due | --grade <id> <grade>]` (else interactive)."""
+    argv = argv or []
     try:
+        if argv and argv[0] == "--list-due":
+            return list_due(config)
+        if argv and argv[0] == "--grade":
+            if len(argv) != 3:
+                print("peck: usage: peck --grade <bower_id> <strong|weak|wrong>")
+                return 2
+            return grade(config, argv[1], argv[2])
         return peck(config)
     except KeyboardInterrupt:
         print("\npeck: interrupted.")

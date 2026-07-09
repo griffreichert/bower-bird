@@ -11,8 +11,10 @@ import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
+import bower_bird.llm as llm
+import bower_bird.review as review
 from bower_bird.config import Config
-from bower_bird.review import LEITNER_LADDER, Review, ReviewStore
+from bower_bird.review import LEITNER_LADDER, Review, ReviewStore, _judge, _read_grade
 
 _failures = 0
 
@@ -278,6 +280,68 @@ def test_store_file_is_valid_json_after_save() -> None:
 
 
 # ---------------------------------------------------------------------------
+# peck judge (LLM-as-judge) — no network: judge_answer / _prompt are stubbed
+# ---------------------------------------------------------------------------
+
+
+def _queue_prompts(answers: list[str]) -> None:
+    """Replace review._prompt with one that pops from `answers`."""
+    it = iter(answers)
+    review._prompt = lambda msg: next(it)  # type: ignore[assignment]
+
+
+def test_read_grade_enter_accepts_judge_default() -> None:
+    """Empty input accepts the judge's grade; the human need not retype it."""
+    _queue_prompts([""])
+    check(_read_grade("strong") == "strong", "enter accepts judge default")
+
+
+def test_read_grade_override_beats_default() -> None:
+    """A typed s/w/x overrides the judge's grade."""
+    _queue_prompts(["x"])
+    check(_read_grade("strong") == "wrong", "override wins over default")
+
+
+def test_read_grade_no_default_requires_explicit() -> None:
+    """With no judge, a bare enter is rejected and re-prompted until valid."""
+    _queue_prompts(["", "w"])
+    check(_read_grade(None) == "weak", "no default → enter reprompts, then w")
+
+
+def test_judge_returns_grade_from_verdict(monkeypatch=None) -> None:
+    """_judge routes the LLM verdict's grade back to the caller."""
+
+    class _V:
+        grade = "weak"
+        rationale = "missed the core point"
+
+    orig = llm.judge_answer
+    llm.judge_answer = lambda q, m, a, model: _V()  # type: ignore[assignment]
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            cfg = _config(Path(d))
+            check(_judge(cfg, "q", "model", "ans") == "weak", "judge grade surfaced")
+    finally:
+        llm.judge_answer = orig
+
+
+def test_judge_failure_falls_back_to_manual() -> None:
+    """A judge error degrades to manual grading (None), never crashes peck."""
+
+    def _boom(q, m, a, model):
+        raise RuntimeError("no API key")
+
+    orig = llm.judge_answer
+    llm.judge_answer = _boom  # type: ignore[assignment]
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            cfg = _config(Path(d))
+            check(_judge(cfg, "q", "model", "ans") is None, "judge error → None")
+    finally:
+        llm.judge_answer = orig
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -292,6 +356,11 @@ if __name__ == "__main__":
     test_store_due_today_filter()
     test_review_json_validates()
     test_store_file_is_valid_json_after_save()
+    test_read_grade_enter_accepts_judge_default()
+    test_read_grade_override_beats_default()
+    test_read_grade_no_default_requires_explicit()
+    test_judge_returns_grade_from_verdict()
+    test_judge_failure_falls_back_to_manual()
 
     if _failures:
         print(f"\n{_failures} test(s) failed.")

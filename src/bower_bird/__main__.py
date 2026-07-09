@@ -59,7 +59,7 @@ def main() -> int:
             return config
         from bower_bird.review import main as peck_main
 
-        return peck_main(config)
+        return peck_main(config, args[1:])
 
     if subcommand == "forage":
         config = _load()

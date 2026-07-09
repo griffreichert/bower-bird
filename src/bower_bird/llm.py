@@ -13,6 +13,8 @@ The clipping contract is a pydantic model; `messages.parse` derives the JSON
 schema from it and validates the response back into the model.
 """
 
+from typing import Literal
+
 import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,6 +24,7 @@ from bower_bird.fetch import PageMeta
 # these are one-liners and short JSON, not essays.
 _DESCRIBE_MAX_TOKENS = 120
 _CLIPPING_MAX_TOKENS = 1200
+_JUDGE_MAX_TOKENS = 300
 
 
 class FeynmanConcept(BaseModel):
@@ -149,6 +152,57 @@ class ClippingPlan(BaseModel):
         "attach the profile URL from the supplied links. Do NOT add authors or "
         "other names the reader did not tag. [] when no #person tags are given.",
     )
+
+
+class JudgeVerdict(BaseModel):
+    """LLM-as-judge grade for one `peck` recall answer.
+
+    Grades the learner's typed answer against the bower's model answer, so the
+    quiz loop is a real eval loop, not self-assessment.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    grade: Literal["strong", "weak", "wrong"] = Field(
+        description="strong = captures the load-bearing idea, essentially "
+        "correct; weak = partially right but vague on or missing the core point; "
+        "wrong = incorrect, or a non-answer (blank / 'I don't know')."
+    )
+    rationale: str = Field(
+        description="One or two lines addressed to the learner: what they nailed "
+        "and what they missed. Grade the understanding, not the wording."
+    )
+
+
+def judge_answer(
+    question: str, model_answer: str, user_answer: str, model: str
+) -> JudgeVerdict:
+    """Grade a peck answer against the model answer. LLM-as-judge (Haiku)."""
+    prompt = (
+        "You are grading a spaced-repetition recall answer, Feynman-style. Grade "
+        "the learner's answer against the model answer:\n"
+        "- strong: captures the load-bearing idea, essentially correct.\n"
+        "- weak: partially right but vague on or missing the core point.\n"
+        "- wrong: incorrect, or a non-answer (blank / 'I don't know').\n"
+        "Grade the UNDERSTANDING, not the wording or length. Give a one/two-line "
+        "rationale addressed to the learner.\n\n"
+        f"Question: {question}\n"
+        f"Model answer: {model_answer}\n"
+        f"Learner's answer: {user_answer or '(blank)'}"
+    )
+    response = _client().messages.parse(
+        model=model,
+        max_tokens=_JUDGE_MAX_TOKENS,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=JudgeVerdict,
+    )
+    verdict = response.parsed_output
+    if verdict is None:  # e.g. a refusal — grade weak (keeps the box), flag it.
+        return JudgeVerdict(
+            grade="weak",
+            rationale="(judge returned nothing — graded weak; override if wrong.)",
+        )
+    return verdict
 
 
 def _client() -> anthropic.Anthropic:
