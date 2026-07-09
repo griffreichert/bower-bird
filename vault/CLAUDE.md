@@ -25,10 +25,10 @@ human think, never a newsletter that gets skimmed and ignored.
 ```
 inbox/                 article reading room — bot drops rendered docs; human reads
                        + marks here; NOTHING is auto-distilled from inbox/ (INVARIANT)
-tweets/                tweet reading room — batched tweets-YYYY-MM-DD.md digests
-                       (resolved X links), read in one pass; at court ONLY marked
-                       sections earn source notes, the rest are let go (archived
-                       undistilled). Same rules as inbox/, separate stream.
+tweets/                tweet reading room — one rendered doc per resolved X link.
+                       Move a doc to trinkets/ to KEEP it (marks welcome but
+                       optional); leave it here and the let-go sweep discards it
+                       after the TTL. Same rules as inbox/, separate stream.
 trinkets/              items the human read + moved out of inbox/ or tweets/; the
                        move IS the "I read it" signal. Tier-1 gather scans here
                        → brain/bowers/
