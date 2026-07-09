@@ -779,7 +779,79 @@ def test_file_entities_creates_leaf_nodes() -> None:
         check(any("roboflow" in i for i in ids), "filed-entity id returned")
 
 
+def test_yaml_scalar_neutralizes_injection() -> None:
+    # Newline-injected frontmatter key + a double-quote are both neutralized.
+    hostile = 'Real Title"\ninjected: true\nmore'
+    out = ingest._yaml_scalar(hostile)
+    check("\n" not in out, "yaml scalar strips newlines (no key injection)")
+    check('"' not in out, "yaml scalar removes double-quotes")
+
+
+def test_source_note_frontmatter_is_injection_safe() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = _config(Path(tmp))
+        meta = PageMeta(
+            url='https://x.test/a"b',  # a quote in the URL used to break quoting
+            title='T"\ntags: [pwned]',
+            description="d",
+            body_excerpt="",
+        )
+        plan = ClippingPlan(
+            concise_title='T"\ntags: [pwned]',
+            description="d",
+            topics=[],
+            category="",
+        )
+        path = ingest.create_source_note(cfg, meta, plan)
+        fm = path.read_text(encoding="utf-8").split("---")[1]
+        # The payload survives harmlessly inside the quoted title value, but must
+        # NOT become a standalone frontmatter key (that needs an un-collapsed
+        # newline, which _yaml_scalar removes).
+        lines = [ln.strip() for ln in fm.splitlines()]
+        check("tags: [pwned]" not in lines, "no injected frontmatter key from title")
+        check(fm.count("source:") == 1, "url quote didn't spawn stray frontmatter")
+
+
+def test_write_concept_section_survives_backslash_model_output() -> None:
+    # A `\1`-style sequence in model output must not raise re.error.
+    concept = FeynmanConcept(
+        handle="regex-thing",
+        definition=r"uses \1 and \g<0> backrefs",
+        why="w",
+        test_question="q",
+        model_answer="a",
+    )
+    seeded = ingest._write_concept_section("# x\n", concept)
+    reapplied = ingest._write_concept_section(seeded, concept)  # exercises .sub path
+    check(r"\1" in reapplied, "backslash model text inserted literally, no crash")
+
+
+def test_ssrf_guard_rejects_internal_hosts() -> None:
+    from bower_bird import fetch as _fetch
+
+    check(not _fetch._is_public_host("localhost"), "localhost blocked")
+    check(not _fetch._is_public_host("127.0.0.1"), "loopback blocked")
+    check(not _fetch._is_public_host("169.254.169.254"), "link-local metadata blocked")
+    check(not _fetch._is_public_host("10.0.0.1"), "RFC1918 blocked")
+    check(not _fetch._is_public_host(""), "empty host blocked")
+    check(_fetch._is_public_host("example.com"), "public host allowed")
+
+
+def test_allowed_chat_id_set_parsing() -> None:
+    cfg = Config(telegram_bot_token="x", vault_path=Path("/"), allowed_chat_ids="")
+    check(cfg.allowed_chat_id_set == set(), "empty allowlist parses to empty set")
+    cfg2 = Config(
+        telegram_bot_token="x", vault_path=Path("/"), allowed_chat_ids="1, 2 3"
+    )
+    check(cfg2.allowed_chat_id_set == {1, 2, 3}, "comma/space allowlist parses to ints")
+
+
 def main() -> int:
+    test_yaml_scalar_neutralizes_injection()
+    test_source_note_frontmatter_is_injection_safe()
+    test_write_concept_section_survives_backslash_model_output()
+    test_ssrf_guard_rejects_internal_hosts()
+    test_allowed_chat_id_set_parsing()
     test_assert_writable()
     test_append_link_additive_and_idempotent()
     test_telegram_inbox()
