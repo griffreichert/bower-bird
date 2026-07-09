@@ -38,6 +38,16 @@ def _assert_writable(config: Config, path: Path) -> None:
         )
 
 
+def _yaml_scalar(value: str) -> str:
+    """Sanitize a string for a double-quoted YAML scalar in frontmatter.
+
+    Page metadata and model output are attacker-influenceable (a hostile page's
+    og:title, or prompt-injected model fields). Collapsing whitespace kills
+    newline-injection of spurious frontmatter keys; swapping `"`→`'` keeps the
+    closing quote intact. Apply to every value interpolated into frontmatter."""
+    return " ".join(value.split()).replace('"', "'")
+
+
 def _safe_filename(title: str) -> str:
     cleaned = _INVALID_FILENAME.sub("-", title).strip().strip(".")
     cleaned = re.sub(r"\s+", " ", cleaned)
@@ -332,8 +342,8 @@ def write_inbox_doc(config: Config, meta: PageMeta, body: str) -> Path | None:
         else "_Unable to extract body text — open in browser to read._"
     )
     content = _INBOX_DOC_TEMPLATE.format(
-        title=meta.title.replace('"', "'"),
-        url=meta.url,
+        title=_yaml_scalar(meta.title),
+        url=_yaml_scalar(meta.url),
         today=_today(),
         body=body_block,
     )
@@ -445,15 +455,15 @@ def create_source_note(
         else "- _(no connections yet)_"
     )
 
-    author = (meta.author or plan.author).strip().replace('"', "'")
+    author = _yaml_scalar(meta.author or plan.author)
     author_line = f'author: "{author}"\n' if author else ""
 
     parts = [
         _SOURCE_FRONTMATTER.format(
-            title=display_title.replace('"', "'"),
-            url=meta.url,
+            title=_yaml_scalar(display_title),
+            url=_yaml_scalar(meta.url),
             today=_today(),
-            description=plan.description.replace('"', "'"),
+            description=_yaml_scalar(plan.description),
             author_line=author_line,
             tags=_source_tags(marks),
         ),
@@ -532,8 +542,8 @@ def create_leaf_note(
 
     if not path.exists():
         body = _LEAF_FRONTMATTER.format(
-            title=entity.name.replace('"', "'"),
-            url=entity.url,
+            title=_yaml_scalar(entity.name),
+            url=_yaml_scalar(entity.url),
             today=_today(),
             kind=kind,
         )
@@ -639,7 +649,10 @@ def _write_concept_section(text: str, concept: FeynmanConcept) -> str:
         model_answer=concept.model_answer,
     )
     if _CONCEPT_SECTION_RE.search(text):
-        return _CONCEPT_SECTION_RE.sub(block, text)
+        # Lambda replacement: insert `block` literally. A plain string arg would
+        # let a backslash sequence in model output (e.g. `\1`) be read as a
+        # backreference — re.error or silent mangling.
+        return _CONCEPT_SECTION_RE.sub(lambda _m: block, text)
     # No existing block — append (before any trailing newline for tidiness)
     sep = "" if text.endswith("\n") else "\n"
     return f"{text}{sep}\n{block}\n"
@@ -673,7 +686,7 @@ def mint_bower(
     else:
         bower_id = str(uuid.uuid4())
         text = _BOWER_FRONTMATTER.format(
-            title=concept.handle,
+            title=_yaml_scalar(concept.handle),
             bower_id=bower_id,
             today=_today(),
         )
