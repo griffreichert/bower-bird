@@ -1,7 +1,8 @@
 """Configuration: environment + vault paths + model.
 
-Loaded once at startup. The Anthropic SDK reads ANTHROPIC_API_KEY from the
-environment itself, so it is not stored here.
+Loaded once at startup. ANTHROPIC_API_KEY is loaded from .env and exported to
+the process environment for the Anthropic SDK — launchd jobs don't inherit
+shell exports (see load_config).
 
 The vault is *not* part of this repo. It lives in iCloud. bower-bird owns one
 folder there, `BowerBird/`, and writes nowhere else (per INVARIANTS). That
@@ -10,10 +11,11 @@ owned folder is `vault_path`. We locate it from the gitignored `notes/` symlink
 up from that target, and the owned folder is `<root>/BowerBird`. Override with
 BOWER_VAULT_PATH.
 
-Writable paths at runtime: inbox/, trinkets/, sources/, notes/ (brain/bowers/),
+Writable paths at runtime: inbox/, tweets/, trinkets/, sources/, notes/ (brain/bowers/),
 archive/, to-clip.md, tools.md, _inbox.md, digests/.
 """
 
+import os
 from pathlib import Path
 from typing import ClassVar
 
@@ -45,7 +47,7 @@ def _default_vault_path() -> Path | None:
 class Config(BaseSettings):
     """Runtime config — secrets/paths/tunables from the environment (or .env).
 
-    The Anthropic SDK reads ANTHROPIC_API_KEY itself, so it is not stored here.
+    ANTHROPIC_API_KEY rides along from .env for launchd runs (see load_config).
     """
 
     model_config = SettingsConfigDict(
@@ -64,6 +66,10 @@ class Config(BaseSettings):
     build_model: ClassVar[str] = "claude-sonnet-5"
 
     telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
+    # The Anthropic SDK reads ANTHROPIC_API_KEY from the process environment —
+    # which a launchd job does NOT inherit from the shell. Load it from .env
+    # here and export it in load_config so cron runs authenticate too.
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     # Comma/space-separated Telegram chat_ids allowed to drive the bot. A
     # Telegram bot is publicly addressable by @handle, so an empty allowlist
     # means ANY sender can trigger fetches/LLM calls/vault writes — set this to
@@ -81,6 +87,9 @@ class Config(BaseSettings):
     # eyeball thin extractions before the cold original is gone (build can starve
     # on thin bodies) — don't drop it to 0.
     archive_ttl_days: int = Field(default=30, alias="BOWER_ARCHIVE_TTL_DAYS")
+    # Inbox docs unread after this many days are let go — moved to
+    # archive/unread/ and ledgered in let-go.md. 0 disables.
+    inbox_ttl_days: int = Field(default=30, alias="BOWER_INBOX_TTL_DAYS")
 
     @field_validator("vault_path", mode="before")
     @classmethod
@@ -110,10 +119,18 @@ class Config(BaseSettings):
         return self.vault_path / "inbox"
 
     @property
+    def tweets_dir(self) -> Path:
+        """Tweet reading room: batched tweets-YYYY-MM-DD.md digests land here,
+        apart from inbox/ so the article queue and the tweet stream never mix.
+        Same rules as inbox/: humans read + mark here, nothing is auto-distilled;
+        the move to trinkets/ is the read signal."""
+        return self.vault_path / "tweets"
+
+    @property
     def trinkets_dir(self) -> Path:
         """Read+annotated items awaiting arrangement into brain/bowers/.
-        The move inbox/ → trinkets/ is the read signal that authorises graph
-        writes. The ingest/gather scan reads from here, never from inbox/."""
+        The move inbox/ (or tweets/) → trinkets/ is the read signal that
+        authorises graph writes. The ingest/gather scan reads from here only."""
         return self.vault_path / "trinkets"
 
     @property
@@ -184,6 +201,16 @@ class Config(BaseSettings):
         return self.vault_path / "archive"
 
     @property
+    def unread_archive_dir(self) -> Path:
+        """Cold storage for let-go inbox docs."""
+        return self.archive_dir / "unread"
+
+    @property
+    def let_go_path(self) -> Path:
+        """Ledger of let-go items, one line each."""
+        return self.vault_path / "let-go.md"
+
+    @property
     def review_path(self) -> Path:
         """Spaced-rep review state for peck — keyed by bower id.
 
@@ -206,8 +233,16 @@ class Config(BaseSettings):
 
 def load_config() -> Config:
     """Load config from the environment / .env. Raises RuntimeError with a
-    readable message on a missing token or unresolvable vault path."""
+    readable message on a missing token or unresolvable vault path.
+
+    Also exports ANTHROPIC_API_KEY from .env into the process environment when
+    it isn't already there — launchd jobs don't inherit the shell's exports,
+    and the Anthropic SDK only looks in the environment.
+    """
     try:
-        return Config()
+        config = Config()
     except ValidationError as exc:
         raise RuntimeError(str(exc)) from exc
+    if config.anthropic_api_key:
+        os.environ.setdefault("ANTHROPIC_API_KEY", config.anthropic_api_key)
+    return config

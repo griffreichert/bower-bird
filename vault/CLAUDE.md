@@ -23,10 +23,15 @@ human think, never a newsletter that gets skimmed and ignored.
 ## Folder layout
 
 ```
-inbox/                 reading room — bot drops rendered docs; human reads + marks
-                       here; NOTHING is auto-distilled from inbox/ (INVARIANT)
-trinkets/              items the human read + moved out of inbox/; the move IS the
-                       "I read it" signal. Tier-1 gather scans here → brain/bowers/
+inbox/                 article reading room — bot drops rendered docs; human reads
+                       + marks here; NOTHING is auto-distilled from inbox/ (INVARIANT)
+tweets/                tweet reading room — batched tweets-YYYY-MM-DD.md digests
+                       (resolved X links), read in one pass; at court ONLY marked
+                       sections earn source notes, the rest are let go (archived
+                       undistilled). Same rules as inbox/, separate stream.
+trinkets/              items the human read + moved out of inbox/ or tweets/; the
+                       move IS the "I read it" signal. Tier-1 gather scans here
+                       → brain/bowers/
 brain/                 the knowledge layer
   bowers/<topic>/      distilled concept notes — one idea per note, idea-titled
   sources/             raw per-source notes (Tier 1 writes these)
@@ -34,7 +39,10 @@ brain/                 the knowledge layer
 archive/               processed clip originals (leave alone)
 digests/               your output — dated digest notes (you create this folder)
 tools.md               keep-for-later shelf of plugins/repos/tools — NOT knowledge
-to-clip.md             links the bot couldn't fetch — human clips them manually
+to-clip.md             links the bot couldn't fetch OR resolve — human clips them
+                       manually (residue lane; most X links now auto-resolve)
+let-go.md              ledger of inbox docs unread past the TTL — moved to
+                       archive/unread/, one line each, nothing deleted
 _inbox.md              Telegram messages that couldn't be auto-processed
 forage.md              gap-signal proposals (where the graph is thin) — Tier-1 hints
 _review.json           spaced-rep review state for the peck quiz loop (don't edit)
@@ -123,6 +131,22 @@ note. They are your highest-signal input — act on them before anything you inf
 A note carrying dig/questions is tagged `dig` — `tag:#dig` is your live queue of
 what the human wants to go deeper on.
 
+## Two streams — read vs. auto-pulled (never blur them)
+
+`brain/_log.md` records both, told apart by verb:
+
+- **`build …`** — the human READ it; it was courted from `trinkets/` into the
+  graph. This is knowledge: connect it, quiz it (`peck`), grow it.
+- **`pull …​ (unread)`** — Tier-1 auto-fetched it into a reading room: `tweets/`
+  (tweet digests) or `inbox/` (rendered articles). The human has NOT read it.
+  Pointers only — never distill, never link into the graph, never quiz on it.
+
+When asked **"what's new?"**, answer in two clearly separated blocks: *new in
+the graph* (recent `build` lines / new `brain/` notes) and *arrived, unread*
+(recent `pull` lines — title + link, one line each, marked unread). An unread
+arrival that was since courted or let go (`let-go.md`) has left `inbox/` —
+don't list it as waiting.
+
 ## The digest — your main job
 
 Run when asked, or via `make digest` (from the repo). Procedure:
@@ -141,6 +165,10 @@ Run when asked, or via `make digest` (from the repo). Procedure:
 4. **Assert** the strong new connections you find into the graph (additive
    `## Links` appends, reciprocal), then **write** `digests/<today>.md` with:
    - `## New since last` — new sources/concepts, as `[[links]]`, one line each.
+   - `## Arrived, unread` — auto-pulled items still waiting in `inbox/` or
+     `tweets/` (from `pull` lines in `_log.md`): title + link, one per line, no
+     distillation. The reading queues at a glance — kept strictly apart from
+     read knowledge.
    - `## Connections` — `[[link]] ↔ [[link]]` pairs you found across recent and
      existing knowledge, with a one-line why for each.
    - `## Gaps & next reads` — where the graph is thin; concrete things to read

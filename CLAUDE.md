@@ -11,12 +11,24 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
 - **Telegram bot** (Tier-1 Haiku pull):
   - **bare link → to-read:** append to `reading-list.md` as `- [ ]` + title +
     one-line "what is it" (metadata, not a summary). No distillation.
-  - **bare link the bot can't read → to-clip:** X/Twitter + other
+  - **bare X/Twitter link → tweet digest:** tweet text resolves via a proxy
+    chain (fxtwitter → syndication CDN, `resolve.py` — no browser, no paid
+    API) into a batched `tweets/tweets-YYYY-MM-DD.md` doc read like a
+    newsletter (`tweets/` is its own reading room, apart from the article
+    `inbox/`). At court **only marked sections earn source notes**; unmarked
+    tweets are let go (archived undistilled) — default is discard.
+  - **bare link the bot can't read or resolve → to-clip (residue):** other
     JS-/login-walled pages (known domains skip fetch; others caught by a thin
-    fetch) go to `to-clip.md` as a `- [ ]` checklist. Open in a browser, Web
-    Clipper into `inbox/`, then the clip lane reads + files it.
-  - **link + a note, or `read:` prefix → learned:** create a source note in
-    `sources/` + assert `[[links]]` into `notes/`.
+    fetch), plus the rare tweet the proxy chain misses, go to `to-clip.md` as
+    a `- [ ]` checklist. Open in a browser, Web Clipper into `inbox/`, then
+    the clip lane reads + files it. `bb drain` retries the queue's unchecked
+    X links through the resolver.
+  - **link + a note, or the word `read` (any case, before/after the link) →
+    learned:** create a source note in `sources/` + assert `[[links]]` into
+    `notes/`. The bare `read` marker fits the share-sheet flow (link first,
+    then type). X links resolve through the same proxy chain first — a tweet
+    read on X itself goes straight to the graph, skipping the digest queue
+    (the read already happened out there).
   - **`tool:` prefix + link → tools shelf:** append to `tools.md` (title +
     your note + one-line). A keep-for-later shelf of plugins/repos/tools —
     pure recall, NOT knowledge, never enters `brain/`. `tool:` with no link →
@@ -71,9 +83,10 @@ Load-bearing. Don't regress them. Full text:
 
 The vault is **not** in this repo — it lives in iCloud (Obsidian). bower-bird
 owns one folder there, `BowerBird/` (`config.vault_path`), and writes **nowhere
-else**. Writable at runtime: `inbox/`, `brain/sources/`, `brain/bowers/`,
-`brain/people/`, `brain/tools/`, `archive/`, `reading-list.md`, `to-clip.md`,
-`tools.md`, `_inbox.md`, `digests/`.
+else**. Writable at runtime: `inbox/`, `tweets/`, `brain/sources/`,
+`brain/bowers/`, `brain/people/`, `brain/tools/`, `archive/` (incl. `unread/`),
+`reading-list.md`, `to-clip.md`, `tools.md`, `let-go.md`, `_inbox.md`,
+`digests/`.
 
 Writes are additive: new files, or `_append_link` appends under `## Links` —
 existing notes are never rewritten. `ingest._assert_writable` enforces the

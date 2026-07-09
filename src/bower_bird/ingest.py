@@ -20,6 +20,7 @@ from bower_bird.config import Config
 from bower_bird.fetch import PageMeta
 from bower_bird.llm import ClippingPlan, EntityRef, FeynmanConcept
 from bower_bird.marks import Marks
+from bower_bird.resolve import TweetText
 from bower_bird.review import ReviewStore
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
@@ -348,6 +349,83 @@ def write_inbox_doc(config: Config, meta: PageMeta, body: str) -> Path | None:
         body=body_block,
     )
     path.write_text(content, encoding="utf-8")
+    # Second stream: auto-pulled ≠ read (see append_tweet_to_digest).
+    append_log(config, f"pull inbox/{path.name} (unread) {meta.url}")
+    return path
+
+
+# --------------------------------------------------------------------------- #
+# tweet digest (resolved X links, batched for one reading pass)
+# --------------------------------------------------------------------------- #
+
+_TWEET_DIGEST_TEMPLATE = """\
+---
+title: "Tweets {today}"
+created: {today}
+bower: bot-rendered
+digest: tweets
+tags:
+  - to-read
+  - tweets
+---
+# Tweets {today}
+
+Resolved tweets, batched so a day's saves read like one short newsletter.
+==Highlight== what's still shiny (plus `#dig` / `> ?` as usual), then move this
+doc to `trinkets/`. **Only marked tweets become source notes** — unmarked ones
+are archived undistilled. Skimming and keeping nothing is a fine outcome.
+"""
+
+# A digest is one reading sitting — past this many tweets, roll a fresh doc.
+_TWEET_DIGEST_CAP = 25
+
+
+def _tweet_section(tweet: TweetText) -> str:
+    """Render one tweet as a `## @handle — url` section the court can re-split."""
+    lines = [f"## @{tweet.author_handle} — {tweet.url}", ""]
+    if tweet.in_reply_to:
+        hint = f"*↳ reply to @{tweet.in_reply_to} — open the link for the thread*"
+        lines += [hint, ""]
+    lines += [tweet.text.strip(), ""]
+    if tweet.quoted_text:
+        quoted = "\n".join(f"> {ln}" for ln in tweet.quoted_text.strip().splitlines())
+        lines += [f"> **quoting @{tweet.quoted_handle}:**", quoted, ""]
+    return "\n".join(lines)
+
+
+def append_tweet_to_digest(config: Config, tweet: TweetText) -> Path | None:
+    """Append a resolved tweet to today's digest doc in inbox/.
+
+    Creates `tweets/tweets-YYYY-MM-DD.md` on first use (rolling to `-2`, `-3`…
+    past the per-doc cap so one doc stays one sitting). Returns the path
+    written, or None when this tweet's URL is already in a digest for today
+    (idempotency belt; primary dedup is url state).
+    """
+    config.tweets_dir.mkdir(parents=True, exist_ok=True)
+    today = _today()
+    n = 1
+    while True:
+        stem = f"tweets-{today}" if n == 1 else f"tweets-{today}-{n}"
+        path = config.tweets_dir / f"{stem}.md"
+        _assert_writable(config, path)
+        if not path.exists():
+            header = _TWEET_DIGEST_TEMPLATE.format(today=today)
+            path.write_text(header, encoding="utf-8")
+        existing = path.read_text(encoding="utf-8")
+        if tweet.url in existing:
+            return None
+        if existing.count("\n## ") < _TWEET_DIGEST_CAP:
+            break
+        n += 1
+
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("\n" + _tweet_section(tweet))
+    # Second stream: auto-pulled ≠ read. `pull` lines mark unread arrivals so
+    # "what's new" can list them as pointers; `build` lines are read knowledge.
+    append_log(
+        config,
+        f"pull tweet @{tweet.author_handle} → tweets/{path.name} (unread) {tweet.url}",
+    )
     return path
 
 

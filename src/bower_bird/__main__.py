@@ -7,6 +7,7 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   peck             Run a spaced-rep quiz session over due bowers (pull-only).
   forage           Gather gap signals and write forage.md proposals (pull-only).
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
+  drain            Resolve unchecked X links in to-clip.md into tweet digests.
 """
 
 from __future__ import annotations
@@ -76,6 +77,11 @@ def main() -> int:
         from bower_bird.prune import main as prune_main
 
         return prune_main(config)
+
+    if subcommand == "drain":
+        from bower_bird.app import run_drain
+
+        return _run(run_drain)
 
     if subcommand == "pull":
         return _run(run_telegram)
