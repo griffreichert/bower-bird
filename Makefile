@@ -36,7 +36,7 @@ test: ## Run unit tests (router + ingest/inbox + resolve/digest/decay + vault-do
 	uv run python tests/test_router.py
 	uv run python tests/test_ingest.py
 	uv run python tests/test_resolve.py
-	uv run python tests/test_tweet_digest.py
+	uv run python tests/test_tweet_docs.py
 	uv run python tests/test_let_go.py
 	uv run python tests/test_vault_docs.py
 

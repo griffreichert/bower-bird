@@ -11,12 +11,12 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
 - **Telegram bot** (Tier-1 Haiku pull):
   - **bare link → to-read:** append to `reading-list.md` as `- [ ]` + title +
     one-line "what is it" (metadata, not a summary). No distillation.
-  - **bare X/Twitter link → tweet digest:** tweet text resolves via a proxy
+  - **bare X/Twitter link → tweet doc:** tweet text resolves via a proxy
     chain (fxtwitter → syndication CDN, `resolve.py` — no browser, no paid
-    API) into a batched `tweets/tweets-YYYY-MM-DD.md` doc read like a
-    newsletter (`tweets/` is its own reading room, apart from the article
-    `inbox/`). At court **only marked sections earn source notes**; unmarked
-    tweets are let go (archived undistilled) — default is discard.
+    API) into one rendered doc per tweet in `tweets/` (its own reading room,
+    apart from the article `inbox/`). Move a doc to `trinkets/` to keep it
+    (marks optional at tweet scale); unmoved docs age out via the let-go
+    sweep — default is discard.
   - **bare link the bot can't read or resolve → to-clip (residue):** other
     JS-/login-walled pages (known domains skip fetch; others caught by a thin
     fetch), plus the rare tweet the proxy chain misses, go to `to-clip.md` as

@@ -48,18 +48,18 @@ def _handle(config: Config, state: State, text: str) -> str:
 
     if parsed.lane is Lane.TO_READ:
         # Known JS-walled domains can't be read over httpx. Tweets resolve via
-        # the proxy chain into today's batched digest doc; anything the chain
+        # the proxy chain into a per-tweet doc in tweets/; anything the chain
         # can't get falls back to the clip queue (now the residue lane).
         if needs_clipping(url):
             tweet = resolve_tweet(url, timeout=config.fetch_timeout)
             if tweet is not None:
-                path = ingest.append_tweet_to_digest(config, tweet)
+                path = ingest.write_tweet_doc(config, tweet)
                 state.mark_url(url)
                 if tweet.url != url:
                     state.mark_url(tweet.url)
                 if path is None:
-                    return f"Already in today's tweet digest: {tweet.url}"
-                return f"Tweet from @{tweet.author_handle} → today's digest."
+                    return f"Already in tweets/: {tweet.url}"
+                return f"Tweet from @{tweet.author_handle} → tweets/{path.name}"
             ingest.append_to_clip_queue(config, url)
             state.mark_url(url)
             return f"Can't read that one solo — queued to clip:\n{url}"
@@ -154,7 +154,7 @@ def run_drain(config: Config | None = None) -> int:
     """`bb drain` — resolve the unchecked X links stuck in to-clip.md.
 
     One-shot backlog eater: each unchecked tweet URL is resolved through the
-    proxy chain into a tweet digest doc and its box checked. Non-tweet links
+    proxy chain into a per-tweet doc in tweets/ and its box checked. Non-tweet links
     and resolution failures are left untouched (still yours to clip). Edits
     to-clip.md in place — a bot-owned file whose whole contract is checkboxes.
     """
@@ -176,15 +176,15 @@ def run_drain(config: Config | None = None) -> int:
         if tweet is None:
             print(f"  drain: could not resolve {url}")
             continue
-        ingest.append_tweet_to_digest(config, tweet)
+        ingest.write_tweet_doc(config, tweet)
         lines[i] = line.replace("- [ ]", "- [x]", 1)
         drained += 1
-        print(f"  drain: @{tweet.author_handle} → digest")
+        print(f"  drain: @{tweet.author_handle} → tweets/")
         time.sleep(0.5)  # be a polite proxy citizen on long queues
 
     if drained:
         path.write_text("".join(lines), encoding="utf-8")
-        print(f"bb drain: resolved {drained} tweet(s) into inbox/ digests.")
+        print(f"bb drain: resolved {drained} tweet(s) into tweets/ docs.")
     else:
         print("bb drain: nothing drained.")
     return drained

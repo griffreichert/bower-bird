@@ -355,71 +355,72 @@ def write_inbox_doc(config: Config, meta: PageMeta, body: str) -> Path | None:
 
 
 # --------------------------------------------------------------------------- #
-# tweet digest (resolved X links, batched for one reading pass)
+# tweet docs (resolved X links, one rendered doc per tweet)
 # --------------------------------------------------------------------------- #
 
-_TWEET_DIGEST_TEMPLATE = """\
+_TWEET_DOC_TEMPLATE = """\
 ---
-title: "Tweets {today}"
+title: "{title}"
+source: "{url}"
+author: "{author}"
 created: {today}
 bower: bot-rendered
-digest: tweets
 tags:
   - to-read
-  - tweets
+  - tweet
 ---
-# Tweets {today}
+# {title}
 
-Resolved tweets, batched so a day's saves read like one short newsletter.
-==Highlight== what's still shiny (plus `#dig` / `> ?` as usual), then move this
-doc to `trinkets/`. **Only marked tweets become source notes** — unmarked ones
-are archived undistilled. Skimming and keeping nothing is a fine outcome.
+> Source: [{url}]({url})
+
+{body}
 """
 
-# A digest is one reading sitting — past this many tweets, roll a fresh doc.
-_TWEET_DIGEST_CAP = 25
 
-
-def _tweet_section(tweet: TweetText) -> str:
-    """Render one tweet as a `## @handle — url` section the court can re-split."""
-    lines = [f"## @{tweet.author_handle} — {tweet.url}", ""]
+def _tweet_body(tweet: TweetText) -> str:
+    lines = []
     if tweet.in_reply_to:
         hint = f"*↳ reply to @{tweet.in_reply_to} — open the link for the thread*"
         lines += [hint, ""]
-    lines += [tweet.text.strip(), ""]
+    lines.append(tweet.text.strip())
     if tweet.quoted_text:
         quoted = "\n".join(f"> {ln}" for ln in tweet.quoted_text.strip().splitlines())
-        lines += [f"> **quoting @{tweet.quoted_handle}:**", quoted, ""]
+        lines += ["", f"> **quoting @{tweet.quoted_handle}:**", quoted]
     return "\n".join(lines)
 
 
-def append_tweet_to_digest(config: Config, tweet: TweetText) -> Path | None:
-    """Append a resolved tweet to today's digest doc in inbox/.
+def write_tweet_doc(config: Config, tweet: TweetText) -> Path | None:
+    """Write one rendered doc per resolved tweet into tweets/.
 
-    Creates `tweets/tweets-YYYY-MM-DD.md` on first use (rolling to `-2`, `-3`…
-    past the per-doc cap so one doc stays one sitting). Returns the path
-    written, or None when this tweet's URL is already in a digest for today
-    (idempotency belt; primary dedup is url state).
+    Reading flow: move a tweet doc to trinkets/ to keep it (the read signal —
+    marks welcome but optional for something this short); leave it in tweets/
+    and the let-go sweep discards it after the TTL. Returns the path written,
+    or None when this tweet already has a doc (idempotency belt; primary dedup
+    is url state).
     """
     config.tweets_dir.mkdir(parents=True, exist_ok=True)
-    today = _today()
-    n = 1
-    while True:
-        stem = f"tweets-{today}" if n == 1 else f"tweets-{today}-{n}"
-        path = config.tweets_dir / f"{stem}.md"
-        _assert_writable(config, path)
-        if not path.exists():
-            header = _TWEET_DIGEST_TEMPLATE.format(today=today)
-            path.write_text(header, encoding="utf-8")
-        existing = path.read_text(encoding="utf-8")
-        if tweet.url in existing:
+    snippet = " ".join(tweet.text.split())[:60].strip() or tweet.id
+    title = f"@{tweet.author_handle} — {snippet}"
+    path = config.tweets_dir / f"{_safe_filename(title)}.md"
+    _assert_writable(config, path)
+    if path.exists():
+        if tweet.url in path.read_text(encoding="utf-8"):
+            return None  # same tweet, already rendered
+        # Same author + same opening words, different tweet — disambiguate.
+        path = config.tweets_dir / f"{_safe_filename(f'{title} {tweet.id}')}.md"
+        if path.exists():
             return None
-        if existing.count("\n## ") < _TWEET_DIGEST_CAP:
-            break
-        n += 1
 
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write("\n" + _tweet_section(tweet))
+    path.write_text(
+        _TWEET_DOC_TEMPLATE.format(
+            title=_yaml_scalar(title),
+            url=_yaml_scalar(tweet.url),
+            author=_yaml_scalar(tweet.author_name),
+            today=_today(),
+            body=_tweet_body(tweet),
+        ),
+        encoding="utf-8",
+    )
     # Second stream: auto-pulled ≠ read. `pull` lines mark unread arrivals so
     # "what's new" can list them as pointers; `build` lines are read knowledge.
     append_log(
