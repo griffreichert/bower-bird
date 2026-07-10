@@ -22,6 +22,14 @@ if [ ! -d "$VAULT" ]; then
 fi
 
 cd "$VAULT"
+
+# Weave runs on the Max SUBSCRIPTION, not the API. A shell-exported
+# ANTHROPIC_API_KEY (from .env, for the Tier-1 Haiku path) takes precedence over
+# the claude.ai login and would silently bill API tokens — unset it here so
+# `claude` falls back to the subscription auth. This is the design invariant:
+# "no API tokens for whole-graph synthesis."
+unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+
 # ponytail: prompt finalized in Phase 2 alongside the weave/lint playbook rewrite
 # in BowerBird/CLAUDE.md. For now it points Claude Code at that playbook.
 exec claude -p \
