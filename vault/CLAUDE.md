@@ -84,9 +84,16 @@ you file them.
   source. Frontmatter `title / created`, `bower: generated` (for ones you
   create), `## Links`. If a concept note lacks `bower: generated`, a human wrote
   it — only append links, never edit the body.
-- **Reference sources by `source:` frontmatter URL, never wikilink a source
-  note** — so moving/removing a source never breaks a concept note. A concept
-  note and a source note must never share a basename.
+- **Two link headings, never mixed.** `## Links` = sibling-concept edges
+  (concept ↔ concept). `## Sources` = backlinks to the source note **plus** any
+  people/tool leaf notes — the nodes you click to reach the origin. Source and
+  leaf wikilinks belong under `## Sources`, **never** under `## Links`. The
+  `source:` frontmatter URL stays the durable machine pointer; the `## Sources`
+  wikilink is the human click-through in Obsidian.
+- **A concept note and a source note must never share a basename** — Obsidian
+  resolves `[[wikilinks]]` **case-insensitively**, so names differing only by
+  case (e.g. `LLM internals` vs `LLM Internals`) collide and resolve
+  arbitrarily. Title a concept as the *idea it states*, not the source.
 - Links are reciprocal: when you link a source to a concept, link the concept
   back to the source.
 
