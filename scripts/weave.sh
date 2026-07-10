@@ -30,7 +30,26 @@ cd "$VAULT"
 # "no API tokens for whole-graph synthesis."
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
 
+PROMPT="Run the weave pass following BowerBird/CLAUDE.md: deep whole-graph synthesis + lint over the existing graph."
+
+# First run must be INTERACTIVE: headless `claude -p` cannot display the
+# folder-write permission prompt, so it silently hangs. Gate on a sentinel
+# (gitignored) — first time, launch an interactive session seeded with the
+# prompt so you can approve write access inline; mark it, then all future runs
+# go headless.
+SENTINEL="$REPO_ROOT/.weave-approved"
+if [ ! -f "$SENTINEL" ]; then
+  echo "First weave run — launching interactively so you can grant write access"
+  echo "to $VAULT. Approve the folder-write prompt (choose 'don't ask again for"
+  echo "this folder'), let the pass finish, then exit."
+  echo
+  claude "$PROMPT"
+  touch "$SENTINEL"
+  echo
+  echo "Marked approved ($SENTINEL) — future 'make weave' runs headless."
+  exit 0
+fi
+
 # ponytail: prompt finalized in Phase 2 alongside the weave/lint playbook rewrite
 # in BowerBird/CLAUDE.md. For now it points Claude Code at that playbook.
-exec claude -p \
-  "Run the weave pass following BowerBird/CLAUDE.md: deep whole-graph synthesis + lint over the existing graph."
+exec claude -p "$PROMPT"

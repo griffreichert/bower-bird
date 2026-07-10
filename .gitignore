@@ -230,3 +230,6 @@ data/
 
 # deepsec scanner scaffold (transient, security pass)
 .deepsec/
+
+# weave first-run sentinel (see scripts/weave.sh)
+.weave-approved
