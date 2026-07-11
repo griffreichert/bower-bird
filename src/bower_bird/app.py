@@ -217,6 +217,17 @@ def _pull_telegram(config: Config, state: State) -> int:
 
         try:
             receipt = _handle(config, state, update.text)
+        except OSError as exc:
+            # Transient filesystem error — iCloud raises EDEADLK (errno 11 on
+            # macOS) reading a dataless file it hasn't materialized yet. Don't
+            # ack: stop here so this and later updates retry next tick.
+            # ponytail: a *permanent* OSError stalls the queue; the cron log
+            # shows it, unblock by hand.
+            print(
+                f"retrying update {update.update_id} next tick: {exc}",
+                file=sys.stderr,
+            )
+            return processed
         except Exception as exc:  # noqa: BLE001 — report, don't crash the run
             # Generic receipt: never reflect internal detail (paths, tokens) to
             # the sender. Full exception goes to the local cron log only.
