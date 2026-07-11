@@ -72,7 +72,7 @@ def test_other_error_acks() -> None:
     updates = [Update(update_id=7, chat_id=1, text="junk")]
     state, processed, sent = _run_pull(handle, updates)
     check(state.telegram_offset == 8, "poison message must ack so it can't loop")
-    check(sent == ["Couldn't process that one."], "generic receipt, no detail")
+    check(sent == ["⚠️ Couldn't process that one."], "generic receipt, no detail")
 
 
 def test_success_acks_and_receipts() -> None:
