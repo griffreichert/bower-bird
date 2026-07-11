@@ -20,19 +20,25 @@ from bower_bird.router import Lane, parse
 from bower_bird.state import State
 
 
+def _short(title: str, limit: int = 60) -> str:
+    """Squash whitespace and cap a page title for a phone-width receipt."""
+    title = " ".join(title.split())
+    return title if len(title) <= limit else title[: limit - 1].rstrip() + "…"
+
+
 def _handle(config: Config, state: State, text: str) -> str:
     parsed = parse(text)
 
     if parsed.lane is Lane.NO_LINK:
         # Nothing droppable — park it in the catch-all inbox, never discard.
         ingest.append_to_telegram_inbox(config, text, reason="no link")
-        return "No link found — parked in _inbox.md."
+        return "🗃️ No link — parked in _inbox"
 
     url = parsed.url
     assert url is not None  # NO_LINK is the only url-less lane
 
     if state.seen_url(url):
-        return f"Already captured earlier: {url}"
+        return "🔁 Already captured"
 
     if parsed.lane is Lane.TOOL:
         # A keep-for-later shelf item. Repos/tool pages fetch fine over httpx.
@@ -43,8 +49,8 @@ def _handle(config: Config, state: State, text: str) -> str:
         )
         state.mark_url(url)
         if not added:
-            return f"Already on the tools shelf: {meta.title}"
-        return f"Saved to tools: {meta.title}\n— {parsed.note or oneline}"
+            return f"🔁 Already in tools — {_short(meta.title)}"
+        return f"🔧 tools — {_short(meta.title)}"
 
     if parsed.lane is Lane.TO_READ:
         # Known JS-walled domains can't be read over httpx. Tweets resolve via
@@ -58,26 +64,26 @@ def _handle(config: Config, state: State, text: str) -> str:
                 if tweet.url != url:
                     state.mark_url(tweet.url)
                 if path is None:
-                    return f"Already in tweets/: {tweet.url}"
-                return f"Tweet from @{tweet.author_handle} → tweets/{path.name}"
+                    return "🔁 Already in tweets"
+                return f"🐦 tweets — @{tweet.author_handle}"
             ingest.append_to_clip_queue(config, url)
             state.mark_url(url)
-            return f"Can't read that one solo — queued to clip:\n{url}"
+            return "✂️ Can't read that one solo — queued to clip"
 
         meta, body = fetch_rendered(url, timeout=config.fetch_timeout)
         if meta.is_thin:
             # Fetch came back empty (likely walled). Send it to the clip queue.
             ingest.append_to_clip_queue(config, url, meta.title)
             state.mark_url(url)
-            return f"Couldn't read that one — queued to clip:\n{url}"
+            return "✂️ Couldn't read that one — queued to clip"
 
         # Bare link → rendered readable doc in inbox/. The human reads + marks
         # it there; moving it to trinkets/ is the read signal for further processing.
         path = ingest.write_inbox_doc(config, meta, body)
         state.mark_url(url)
         if path is None:
-            return f"Already in inbox: {meta.title}"
-        return f"Added to inbox: {meta.title}"
+            return f"🔁 Already in inbox — {_short(meta.title)}"
+        return f"📥 inbox — {_short(meta.title)}"
 
     # Lane.LEARNED — the user has read it and added a note (`read:` / link+note).
     # A tweet read on X itself skips the digest queue: resolve its text and file
@@ -87,7 +93,7 @@ def _handle(config: Config, state: State, text: str) -> str:
         if tweet is None:
             ingest.append_to_clip_queue(config, url)
             state.mark_url(url)
-            return f"Couldn't resolve that tweet — queued to clip:\n{url}"
+            return "✂️ Couldn't resolve that tweet — queued to clip"
         body = tweet.text
         if tweet.quoted_text:
             body += f"\n\nQuoting @{tweet.quoted_handle}:\n{tweet.quoted_text}"
@@ -105,7 +111,7 @@ def _handle(config: Config, state: State, text: str) -> str:
     path = ingest.create_source_note(config, meta, plan, note=parsed.note)
     state.mark_url(url)
     if path is None:
-        return f"Already filed: {meta.title}"
+        return f"🔁 Already in brain — {_short(meta.title)}"
 
     # File named tool/person entities as their own leaf nodes (same as the clip lane).
     ingest.file_entities(config, plan, path.stem)
@@ -119,7 +125,7 @@ def _handle(config: Config, state: State, text: str) -> str:
     )
 
     links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
-    return f"Filed: {meta.title}\nLinked: {links}"
+    return f"🧠 brain — {_short(meta.title)}\nLinked: {links}"
 
 
 def run_telegram(config: Config | None = None) -> int:
@@ -232,7 +238,7 @@ def _pull_telegram(config: Config, state: State) -> int:
             # Generic receipt: never reflect internal detail (paths, tokens) to
             # the sender. Full exception goes to the local cron log only.
             print(f"error handling update {update.update_id}: {exc}", file=sys.stderr)
-            receipt = "Couldn't process that one."
+            receipt = "⚠️ Couldn't process that one."
 
         try:
             telegram.send_message(config.telegram_bot_token, update.chat_id, receipt)
