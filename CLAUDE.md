@@ -29,6 +29,10 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
     then type). X links resolve through the same proxy chain first — a tweet
     read on X itself goes straight to the graph, skipping the digest queue
     (the read already happened out there).
+  - **bare PDF link (`.pdf` path or arXiv `/pdf/`) → learned:** a sent PDF
+    counts as read. Download → `pypdf` text extraction → straight into the
+    graph via the learned lane (`sources/` note + `[[links]]`), skipping the
+    to-read court. No extractable text (scanned) or fetch failure → `to-clip.md`.
   - **`tool:` prefix + link → tools shelf:** append to `tools.md` (title +
     your note + one-line). A keep-for-later shelf of plugins/repos/tools —
     pure recall, NOT knowledge, never enters `brain/`. `tool:` with no link →
@@ -71,7 +75,8 @@ Load-bearing. Don't regress them. Full text:
   text** — only appends.
 - **Never distill an article that hasn't been read.** The reading queue holds
   unread items (metadata only); `sources/`/`notes/` only get what was read. A
-  Web Clipper save counts as read; a bare link does not.
+  Web Clipper save counts as read; a bare link does not — except a bare PDF
+  link, which counts as read (papers get sent after reading, 2026-07-11).
 - **Output is pointers, not summaries** for unread items.
 - **Quiet by default.** Stay silent when there's nothing worth surfacing.
 - **Idempotent.** Already-processed items are never double-processed — Telegram

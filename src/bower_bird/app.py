@@ -13,7 +13,14 @@ import time
 
 from bower_bird import inbox, ingest, telegram
 from bower_bird.config import Config, load_config
-from bower_bird.fetch import PageMeta, fetch, fetch_rendered, needs_clipping
+from bower_bird.fetch import (
+    PageMeta,
+    fetch,
+    fetch_pdf,
+    fetch_rendered,
+    is_pdf_url,
+    needs_clipping,
+)
 from bower_bird.llm import describe_link, synthesize_clipping
 from bower_bird.resolve import parse_tweet_id, resolve_tweet
 from bower_bird.router import Lane, parse
@@ -52,7 +59,9 @@ def _handle(config: Config, state: State, text: str) -> str:
             return f"🔁 Already in tools — {_short(meta.title)}"
         return f"🔧 tools — {_short(meta.title)}"
 
-    if parsed.lane is Lane.TO_READ:
+    # A sent PDF counts as read (INVARIANTS, 2026-07-11): skip the to-read
+    # court and fall through to the learned lane below.
+    if parsed.lane is Lane.TO_READ and not is_pdf_url(url):
         # Known JS-walled domains can't be read over httpx. Tweets resolve via
         # the proxy chain into a per-tweet doc in tweets/; anything the chain
         # can't get falls back to the clip queue (now the residue lane).
@@ -104,6 +113,13 @@ def _handle(config: Config, state: State, text: str) -> str:
             body_excerpt=body,
             author=tweet.author_name,
         )
+    elif is_pdf_url(url):
+        meta = fetch_pdf(url, timeout=config.fetch_timeout)
+        if not meta.body_excerpt:
+            # Unfetchable or scanned (no extractable text) — human's problem.
+            ingest.append_to_clip_queue(config, url)
+            state.mark_url(url)
+            return "✂️ Couldn't read that PDF — queued to clip"
     else:
         meta = fetch(url, timeout=config.fetch_timeout)
     candidates = ingest.read_index(config)
@@ -111,7 +127,7 @@ def _handle(config: Config, state: State, text: str) -> str:
     path = ingest.create_source_note(config, meta, plan, note=parsed.note)
     state.mark_url(url)
     if path is None:
-        return f"🔁 Already in brain — {_short(meta.title)}"
+        return f"🔁 Already in brain — {_short(plan.concise_title)}"
 
     # File named tool/person entities as their own leaf nodes (same as the clip lane).
     ingest.file_entities(config, plan, path.stem)
@@ -125,7 +141,7 @@ def _handle(config: Config, state: State, text: str) -> str:
     )
 
     links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
-    return f"🧠 brain — {_short(meta.title)}\nLinked: {links}"
+    return f"🧠 brain — {_short(plan.concise_title)}\nLinked: {links}"
 
 
 def run_telegram(config: Config | None = None) -> int:
