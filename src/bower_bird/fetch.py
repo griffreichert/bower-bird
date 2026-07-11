@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from io import BytesIO
 from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 from markdownify import markdownify
 from pydantic import BaseModel, ConfigDict
+from pypdf import PdfReader
 
 _UA = "Mozilla/5.0 (compatible; bower-bird/0.1; +https://github.com/)"
 _MAX_BODY_CHARS = 6000
@@ -28,6 +30,23 @@ _MAX_RENDER_CHARS = 40_000
 # useless metadata (see daily notes 2026-06-24). These skip fetch entirely and
 # route to the clip queue: open in a browser + Web Clipper instead.
 _NEEDS_BROWSER = ("x.com", "twitter.com", "t.co")
+
+# PDF lane caps: keep downloads and Haiku grounding bounded.
+_MAX_PDF_BYTES = 20_000_000
+_MAX_PDF_PAGES = 50
+
+
+def is_pdf_url(url: str) -> bool:
+    """True if this URL points at a PDF we should text-extract, not render.
+
+    ponytail: URL shape only (.pdf path or arXiv /pdf/) — a PDF served from an
+    extensionless URL falls through to the HTML path; add a Content-Type sniff
+    if that ever bites.
+    """
+    parts = urlparse(url)
+    return parts.path.lower().endswith(".pdf") or (
+        parts.netloc.lower().endswith("arxiv.org") and parts.path.startswith("/pdf/")
+    )
 
 
 def needs_clipping(url: str) -> bool:
@@ -175,6 +194,44 @@ def fetch(url: str, timeout: float) -> PageMeta:
         title=title,
         description=description,
         body_excerpt=body_text[:_MAX_BODY_CHARS],
+        author=author,
+    )
+
+
+def fetch_pdf(url: str, timeout: float) -> PageMeta:
+    """Download a PDF and extract its text for the learned lane.
+
+    A sent PDF counts as read (INVARIANTS, 2026-07-11), so unlike HTML it never
+    lands in the to-read court — the caller synthesizes straight into brain/.
+    Returns thin meta (empty body_excerpt) on any failure, including a scanned
+    PDF with no extractable text; the caller routes those to the clip queue.
+    """
+    try:
+        resp = _safe_get(url, timeout)
+        resp.raise_for_status()
+        if len(resp.content) > _MAX_PDF_BYTES:
+            raise ValueError(f"pdf too large: {len(resp.content)} bytes")
+        reader = PdfReader(BytesIO(resp.content))
+        text = "\n".join(
+            page.extract_text() or "" for page in reader.pages[:_MAX_PDF_PAGES]
+        ).strip()
+    except Exception:
+        # Non-fatal, same contract as fetch(): thin meta, caller decides.
+        return PageMeta(url=url, title=url, description="", body_excerpt="")
+
+    info = reader.metadata
+    title = (info.title or "").strip() if info else ""
+    if not title:
+        # Fall back to the first real line of text, then the URL filename.
+        first = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+        title = first[:80] or urlparse(url).path.rsplit("/", 1)[-1] or url
+    author = (info.author or "").strip() if info else ""
+
+    return PageMeta(
+        url=url,
+        title=title,
+        description="",
+        body_excerpt=text[:_MAX_BODY_CHARS],
         author=author,
     )
 
