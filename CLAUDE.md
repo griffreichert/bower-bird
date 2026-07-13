@@ -9,8 +9,9 @@ what it is, the no-server architecture, the capture model, and the roadmap — s
 Two capture entry points, both landing in the owned `BowerBird/` folder:
 
 - **Telegram bot** (Tier-1 Haiku pull):
-  - **bare link → to-read:** append to `reading-list.md` as `- [ ]` + title +
-    one-line "what is it" (metadata, not a summary). No distillation.
+  - **bare link → to-read:** rendered into a readable markdown doc in
+    `inbox/` (no distillation — a copy, not a summary). The human reads + marks
+    it there; moving it to `trinkets/` is the read signal.
   - **bare X/Twitter link → tweet doc:** tweet text resolves via a proxy
     chain (fxtwitter → syndication CDN, `resolve.py` — no browser, no paid
     API) into one rendered doc per tweet in `tweets/` (its own reading room,
@@ -90,7 +91,7 @@ The vault is **not** in this repo — it lives in iCloud (Obsidian). bower-bird
 owns one folder there, `BowerBird/` (`config.vault_path`), and writes **nowhere
 else**. Writable at runtime: `inbox/`, `tweets/`, `brain/sources/`,
 `brain/bowers/`, `brain/people/`, `brain/tools/`, `archive/` (incl. `unread/`),
-`reading-list.md`, `to-clip.md`, `tools.md`, `let-go.md`, `_inbox.md`,
+`to-clip.md`, `tools.md`, `let-go.md`, `_inbox.md`,
 `digests/`.
 
 Writes are additive: new files, or `_append_link` appends under `## Links` —
@@ -126,7 +127,7 @@ src/bower_bird/
   marks.py     reader marks pulled from a clip body (highlight/dig/question/links)
   fetch.py     page metadata (title/description/excerpt)
   llm.py       Anthropic calls: describe_link, synthesize_clipping (pydantic)
-  ingest.py    owned-folder writes (sources/notes/reading-list/to-clip/tools/_inbox), guarded
+  ingest.py    owned-folder writes (sources/notes/inbox/to-clip/tools/_inbox), guarded
   inbox.py     clipper inbox scan: clip -> source note + links -> archive
   app.py       pull orchestration (Telegram queue + clipper inbox)
   __main__.py  `python -m bower_bird`
