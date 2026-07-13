@@ -32,7 +32,7 @@ Two capture entry points, both landing in the owned `BowerBird/` folder:
   - **bare PDF link (`.pdf` path or arXiv `/pdf/`) → learned:** a sent PDF
     counts as read. Download → `pypdf` text extraction → straight into the
     graph via the learned lane (`sources/` note + `[[links]]`), skipping the
-    to-read court. No extractable text (scanned) or fetch failure → `to-clip.md`.
+    to-read inbox. No extractable text (scanned) or fetch failure → `to-clip.md`.
   - **`tool:` prefix + link → tools shelf:** append to `tools.md` (title +
     your note + one-line). A keep-for-later shelf of plugins/repos/tools —
     pure recall, NOT knowledge, never enters `brain/`. `tool:` with no link →

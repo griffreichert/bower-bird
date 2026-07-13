@@ -60,7 +60,7 @@ def _handle(config: Config, state: State, text: str) -> str:
         return f"🔧 tools — {_short(meta.title)}"
 
     # A sent PDF counts as read (INVARIANTS, 2026-07-11): skip the to-read
-    # court and fall through to the learned lane below.
+    # inbox and fall through to the learned lane below.
     if parsed.lane is Lane.TO_READ and not is_pdf_url(url):
         # Known JS-walled domains can't be read over httpx. Tweets resolve via
         # the proxy chain into a per-tweet doc in tweets/; anything the chain

@@ -191,7 +191,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
         # else every url-less clip would collide on "". Docs the bot itself
         # rendered (tweet docs, inbox fills) are exempt: their url was marked at
         # capture time, so this guard would false-dup every one of them — the
-        # content hash above still stops a double court.
+        # content hash above still stops a double gather.
         if fm.get("bower") != "bot-rendered" and meta.url and state.seen_url(meta.url):
             _archive(config, path, new_stem=meta.title)
             log.append(f"dup {path.name}: url already processed, archived")

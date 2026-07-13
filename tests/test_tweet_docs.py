@@ -1,10 +1,10 @@
 """Tweet-doc lane tests — pure logic on a temp vault, no network.
 
 Covers the per-tweet reading flow: write_tweet_doc (create / dup / same-title
-disambiguation / unread pull-log line) and the court treating a moved tweet
+disambiguation / unread pull-log line) and the gather treating a moved tweet
 doc as a normal clip — including the bot-rendered exemption from the url
 dup-guard (tweet urls are marked at capture, so without it every tweet doc
-would false-dup at court). Discard is decay's job now: an unmoved tweet doc
+would false-dup at gather). Discard is decay's job now: an unmoved tweet doc
 ages out via let_go; a moved one is a keep.
 
 Run: uv run python tests/test_tweet_docs.py
@@ -99,7 +99,7 @@ def test_write_creates_and_dedups() -> None:
         )
 
 
-def test_court_files_moved_tweet_doc() -> None:
+def test_gather_files_moved_tweet_doc() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "BowerBird"
         root.mkdir()
@@ -109,7 +109,7 @@ def test_court_files_moved_tweet_doc() -> None:
         doc = ingest.write_tweet_doc(
             cfg, _tweet(2, text="this one is ==worth keeping== for sure")
         )
-        # Capture marks the url — the court's dup-guard must NOT eat the doc.
+        # Capture marks the url — the gather's dup-guard must NOT eat the doc.
         state.mark_url("https://x.com/someone/status/2")
 
         # Human moves it to trinkets/ — the read/keep signal.
@@ -138,13 +138,13 @@ def test_court_files_moved_tweet_doc() -> None:
 
         check(calls == ["https://x.com/someone/status/2"], f"synthesised (got {calls})")
         check((root / "brain" / "sources" / "Kept tweet.md").exists(), "source note")
-        check(not trinket.exists(), "tweet doc archived after court")
+        check(not trinket.exists(), "tweet doc archived after gather")
         check(any("sources/Kept tweet.md" in line for line in log), f"log line: {log}")
 
 
 if __name__ == "__main__":
     test_write_creates_and_dedups()
-    test_court_files_moved_tweet_doc()
+    test_gather_files_moved_tweet_doc()
     if _failures:
         print(f"{_failures} failure(s).")
         raise SystemExit(1)
