@@ -142,7 +142,7 @@ what the human wants to go deeper on.
 
 `brain/_log.md` records both, told apart by verb:
 
-- **`build …`** — the human READ it; it was courted from `trinkets/` into the
+- **`build …`** — the human READ it; it was gathered from `trinkets/` into the
   graph. This is knowledge: connect it, quiz it (`peck`), grow it.
 - **`pull …​ (unread)`** — Tier-1 auto-fetched it into a reading room: `tweets/`
   (tweet digests) or `inbox/` (rendered articles). The human has NOT read it.
@@ -151,7 +151,7 @@ what the human wants to go deeper on.
 When asked **"what's new?"**, answer in two clearly separated blocks: *new in
 the graph* (recent `build` lines / new `brain/` notes) and *arrived, unread*
 (recent `pull` lines — title + link, one line each, marked unread). An unread
-arrival that was since courted or let go (`let-go.md`) has left `inbox/` —
+arrival that was since gathered or let go (`let-go.md`) has left `inbox/` —
 don't list it as waiting.
 
 ## The digest — your main job

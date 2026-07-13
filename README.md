@@ -21,7 +21,7 @@ bower. Same here — found links, curated into a linked knowledge vault.
 A production-shaped **agent harness**, built plain-Python-first so the moving
 parts stay legible:
 
-- **Agent loop / lifecycle** — capture → court → peck. Cron-driven, idempotent,
+- **Agent loop / lifecycle** — capture → gather → peck. Cron-driven, idempotent,
   resumable from durable state; no orchestration framework hiding the control
   flow.
 - **LLM-authored eval payloads** — at ingest, Haiku mints a Feynman-style quiz

@@ -202,7 +202,7 @@ def fetch_pdf(url: str, timeout: float) -> PageMeta:
     """Download a PDF and extract its text for the learned lane.
 
     A sent PDF counts as read (INVARIANTS, 2026-07-11), so unlike HTML it never
-    lands in the to-read court — the caller synthesizes straight into brain/.
+    lands in the to-read inbox — the caller synthesizes straight into brain/.
     Returns thin meta (empty body_excerpt) on any failure, including a scanned
     PDF with no extractable text; the caller routes those to the clip queue.
     """
