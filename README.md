@@ -24,11 +24,12 @@ parts stay legible:
 - **Agent loop / lifecycle** — capture → gather → peck. Cron-driven, idempotent,
   resumable from durable state; no orchestration framework hiding the control
   flow.
-- **LLM-authored eval payloads** — at ingest, Haiku mints a Feynman-style quiz
-  (question + model answer) for each load-bearing concept via structured output.
-  The `peck` loop then runs active recall against it, grading **STRONG / WEAK /
-  WRONG** on a Leitner ladder. *(Auto-grading the recall — LLM-as-judge — is the
-  in-progress step; today the grade is self-scored against the model answer.)*
+- **LLM-authored evals, LLM-as-judge grading** — at ingest, Haiku mints a
+  Feynman-style quiz (question + model answer) for each load-bearing concept via
+  structured output. The `peck` loop runs active recall against it: your typed
+  answer is graded **strong / weak / wrong** by an LLM judge with a one-line
+  rationale — you accept or override — and the grade drives a Leitner ladder.
+  A real eval loop, not self-assessment.
 - **Cost-tiered model routing** — per-item work runs on **Haiku** (cheap,
   cron-safe, structured output via `messages.parse`); whole-graph synthesis runs
   on a **larger model** through Claude Code. Cost shape decides the tier, not
@@ -58,7 +59,8 @@ One bot, told apart by **how** you send:
 
 | You send | Lane | What happens |
 | --- | --- | --- |
-| a bare link | **to-read** | appended to your reading list with a one-line "what is it" (metadata, not a summary) |
+| a bare link | **to-read** | rendered into a readable markdown doc in `inbox/` — you read and mark it there; moving it to `trinkets/` is the read signal |
+| a PDF link (`.pdf` path, or arXiv) | **learned** | a sent PDF counts as read — downloaded, text-extracted (`pypdf`), and filed straight into the graph |
 | an X/Twitter link | **tweet doc** | tweet text resolved (fxtwitter → syndication fallback) into its own doc in `tweets/` — move the keepers to `trinkets/`, the rest age out via the let-go sweep. Already read it on X? Add a note or just the word `read` and it skips the queue |
 | a link the bot can't read or resolve (login-walled) | **to-clip** | queued for a browser Web Clipper, then read + filed |
 | a link **+ a note**, or the word `read` anywhere | **learned** | a clipping is created with your note, plus **proposed** `[[backlinks]]` into your evergreen notes |
@@ -67,20 +69,33 @@ One bot, told apart by **how** you send:
 Your one-line "why" is the highest-value input: it turns *note + source* into a
 linked evergreen note — proposed, for you to accept.
 
+Every send gets a one-glyph receipt back through the bot — 📥 inbox · 🧠 brain ·
+🐦 tweets · 🔧 tools · ✂️ to-clip · 🔁 already captured — so the outcome is
+readable from the notification alone.
+
 ## How it works (no server)
 
 Telegram's own servers hold the queue (~24h) until pulled — no webhook, no
 public host needed.
 
 ```
-phone ──link──▶ Telegram bot ──(queued)──▶ laptop pulls via getUpdates
-                                              │
-                                   route ┌────┴────┐ write
-                                  to-read│         │learned
-                                         ▼         ▼
-                             reading-list.md   sources/ + proposed [[links]]
-                                              │
-                                         receipt back through the bot
+phone ──link──▶ Telegram bot ──(queued ~24h)──▶ laptop pulls via getUpdates
+                                                   │  (cron, idempotent)
+                                        route ┌────┴────┐
+                                       to-read│         │ learned (note / read / PDF)
+                                              ▼         ▼
+                                       inbox/ doc   Haiku: source note          ┐
+                                              │     + proposed [[links]]        │ Tier 1
+                            you read, mark it,│         │                       │ (Haiku, per-item)
+                            move to trinkets/ │         │                       ┘
+                                              ▼         ▼
+                                          gather ──▶ brain/ knowledge graph
+                                                        │
+                                          ┌─────────────┴──────────────┐
+                                          ▼                            ▼
+                                 peck: recall quiz,          weave: whole-graph  ┐ Tier 2
+                                 LLM-as-judge grade,         synthesis + lint    │ (Claude Code,
+                                 Leitner scheduling          (you-triggered)     ┘  subscription)
 ```
 
 Capture is instant; processing waits until the laptop is awake — fine for a
@@ -126,17 +141,8 @@ The vault path auto-resolves from the `notes/` symlink, or set
 Run it on a daily `cron`/`launchd` schedule, or by hand whenever you want to
 process what's piled up.
 
-## Status
-
-Plain-Python capture works end-to-end: Telegram pull → four-lane router →
-guarded vault writes (`sources/` notes + proposed `[[links]]`, entity leaf nodes
-for tools/people), Web Clipper inbox, daily digest.
-
-The **grow loop** — `peck`, spaced-rep review over due bowers — runs end-to-end
-with self-scored recall. Next: an **LLM-as-judge** grade so recall is scored
-automatically, then formalise the `research`/`coding` profile split.
-
 ## Contributing
 
 Architecture rules, invariants, the vault write boundary, the code map, and the
-dev workflow live in [`CLAUDE.md`](CLAUDE.md).
+dev workflow live in [`CLAUDE.md`](CLAUDE.md). Built AI-assisted with Claude
+Code; commit history keeps the co-author trailers.
