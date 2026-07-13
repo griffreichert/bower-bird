@@ -74,11 +74,11 @@ Load-bearing. Don't regress them. Full text:
 - **Additive-autonomous.** Inside `BowerBird/` it creates notes and asserts
   `[[links]]` without asking, but **never rewrites or deletes human-authored
   text** — only appends.
-- **Never distill an article that hasn't been read.** The reading queue holds
-  unread items (metadata only); `sources/`/`notes/` only get what was read. A
-  Web Clipper save counts as read; a bare link does not — except a bare PDF
-  link, which counts as read (papers get sent after reading, 2026-07-11).
-- **Output is pointers, not summaries** for unread items.
+- **Everything sent is shelved.** No reading gate — every send becomes a brain
+  node immediately (antilibrary model, 2026-07-13). Recall (peck + the LLM
+  judge), not reading, is the learning event.
+- **Distill at ingest.** Key ideas are captured onto the node from the source
+  body + any human seed thoughts sent alongside it, never invented.
 - **Quiet by default.** Stay silent when there's nothing worth surfacing.
 - **Idempotent.** Already-processed items are never double-processed — Telegram
   offset + url dedup + clip content-hash, all in `state.py` (in the repo, so it
