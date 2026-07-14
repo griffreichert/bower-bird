@@ -839,11 +839,11 @@ def test_ssrf_guard_rejects_internal_hosts() -> None:
 
 def test_allowed_chat_id_set_parsing() -> None:
     cfg = Config(telegram_bot_token="x", vault_path=Path("/"), allowed_chat_ids="")
-    check(cfg.allowed_chat_id_set == set(), "empty allowlist parses to empty set")
+    check(cfg.allowed_chat_ids == set(), "empty allowlist parses to empty set")
     cfg2 = Config(
         telegram_bot_token="x", vault_path=Path("/"), allowed_chat_ids="1, 2 3"
     )
-    check(cfg2.allowed_chat_id_set == {1, 2, 3}, "comma/space allowlist parses to ints")
+    check(cfg2.allowed_chat_ids == {1, 2, 3}, "comma/space allowlist parses to ints")
 
 
 def main() -> int:

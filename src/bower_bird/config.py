@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -41,12 +41,27 @@ class LLMSettings(BaseModel):
     these are one-liners and short JSON, not essays.
     """
 
-    model: str = "claude-haiku-4-5"
-    build_model: str = "claude-sonnet-5"
-    describe_max_tokens: int = 120
-    clipping_max_tokens: int = 1200
-    judge_max_tokens: int = 300
-    question_max_tokens: int = 200
+    model_config = ConfigDict(frozen=True)
+
+    model: str = Field(
+        default="claude-haiku-4-5", description="Tier-1 model: link identification."
+    )
+    build_model: str = Field(
+        default="claude-sonnet-5",
+        description="Build/clip synthesis model — linking, placement, extraction.",
+    )
+    describe_max_tokens: int = Field(
+        default=120, gt=0, description="Cap for describe_link's one-line output."
+    )
+    clipping_max_tokens: int = Field(
+        default=1200, gt=0, description="Cap for synthesize_clipping's structured plan."
+    )
+    judge_max_tokens: int = Field(
+        default=300, gt=0, description="Cap for judge_answer's verdict + rationale."
+    )
+    question_max_tokens: int = Field(
+        default=200, gt=0, description="Cap for generate_question's quiz question."
+    )
 
 
 class Config(BaseSettings):
@@ -61,37 +76,59 @@ class Config(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
+        frozen=True,
     )
 
     # LLM tunables (model names, max-token caps) — design, not deployment;
     # not env-configurable. See LLMSettings.
     llm: ClassVar[LLMSettings] = LLMSettings()
 
-    telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
+    telegram_bot_token: SecretStr = Field(alias="TELEGRAM_BOT_TOKEN")
     # The Anthropic SDK reads ANTHROPIC_API_KEY from the process environment —
     # which a launchd job does NOT inherit from the shell. Load it from .env
     # here and export it in model_post_init so cron runs authenticate too.
-    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
-    # Comma/space-separated Telegram chat_ids allowed to drive the bot. A
-    # Telegram bot is publicly addressable by @handle, so an empty allowlist
-    # means ANY sender can trigger fetches/LLM calls/vault writes — set this to
-    # your own chat_id(s) to lock the bot to you. See allowed_chat_id_set.
-    allowed_chat_ids: str = Field(default="", alias="BOWER_ALLOWED_CHAT_IDS")
+    anthropic_api_key: SecretStr = Field(
+        default=SecretStr(""), alias="ANTHROPIC_API_KEY"
+    )
+    # Telegram chat_ids allowed to drive the bot, parsed from a comma/space-
+    # separated env string. A Telegram bot is publicly addressable by @handle,
+    # so an empty allowlist means ANY sender can trigger fetches/LLM calls/
+    # vault writes — set this to your own chat_id(s) to lock the bot to you.
+    allowed_chat_ids: set[int] = Field(
+        default_factory=set, alias="BOWER_ALLOWED_CHAT_IDS"
+    )
     vault_path: Path = Field(
         default=None, alias="BOWER_VAULT_PATH", validate_default=True
     )
     state_path: Path = Field(
         default=REPO_ROOT / "data" / "state.json", alias="BOWER_STATE_PATH"
     )
-    fetch_timeout: float = Field(default=15, alias="BOWER_FETCH_TIMEOUT")
-    queue_limit: int = Field(default=100, alias="BOWER_QUEUE_LIMIT")
+    fetch_timeout: float = Field(
+        default=15,
+        gt=0,
+        alias="BOWER_FETCH_TIMEOUT",
+        description="HTTP fetch timeout, seconds.",
+    )
+    queue_limit: int = Field(
+        default=100,
+        ge=1,
+        alias="BOWER_QUEUE_LIMIT",
+        description="Max Telegram updates pulled per run.",
+    )
     # `bb prune` only offers archived husks older than this. The window exists to
     # eyeball thin extractions before the cold original is gone (build can starve
     # on thin bodies) — don't drop it to 0.
-    archive_ttl_days: int = Field(default=30, alias="BOWER_ARCHIVE_TTL_DAYS")
+    archive_ttl_days: int = Field(default=30, ge=0, alias="BOWER_ARCHIVE_TTL_DAYS")
     # Inbox docs unread after this many days are let go — moved to
     # archive/unread/ and ledgered in let-go.md. 0 disables.
-    inbox_ttl_days: int = Field(default=30, alias="BOWER_INBOX_TTL_DAYS")
+    inbox_ttl_days: int = Field(default=30, ge=0, alias="BOWER_INBOX_TTL_DAYS")
+
+    @field_validator("allowed_chat_ids", mode="before")
+    @classmethod
+    def _parse_chat_ids(cls, v: str | set[int] | None) -> set[int]:
+        if not isinstance(v, str):
+            return v if v is not None else set()
+        return {int(x) for x in v.replace(",", " ").split()}
 
     @field_validator("vault_path", mode="before")
     @classmethod
@@ -117,13 +154,6 @@ class Config(BaseSettings):
         if not vault.is_dir():
             raise ValueError(f"Vault path does not exist: {vault}")
         return vault
-
-    @property
-    def allowed_chat_id_set(self) -> set[int]:
-        """Telegram chat_ids permitted to drive the bot (parsed from
-        allowed_chat_ids). Empty = unlocked: any sender is accepted. Non-empty =
-        every other sender is silently dropped in the pull loop."""
-        return {int(x) for x in self.allowed_chat_ids.replace(",", " ").split()}
 
     # --- Derived locations inside the owned folder (everything we touch) ---
     @property
@@ -238,5 +268,6 @@ class Config(BaseSettings):
         """Export ANTHROPIC_API_KEY into the process environment when it isn't
         already there — launchd jobs don't inherit the shell's exports, and
         the Anthropic SDK only looks in the environment."""
-        if self.anthropic_api_key:
-            os.environ.setdefault("ANTHROPIC_API_KEY", self.anthropic_api_key)
+        key = self.anthropic_api_key.get_secret_value()
+        if key:
+            os.environ.setdefault("ANTHROPIC_API_KEY", key)

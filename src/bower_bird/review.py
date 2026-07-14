@@ -29,7 +29,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from bower_bird.config import Config
 
@@ -104,6 +104,8 @@ class Review(BaseModel):
 # ReviewStore — load / save / mutate
 # ---------------------------------------------------------------------------
 
+_ReviewMap = TypeAdapter(dict[str, Review])
+
 
 class ReviewStore:
     """Validated in-memory view of ``_review.json``.
@@ -123,21 +125,15 @@ class ReviewStore:
         path = config.review_path
         if not path.exists():
             return cls(config, {})
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        entries: dict[str, Review] = {}
-        for node_id, data in raw.items():
-            entries[node_id] = Review.model_validate(data)
+        entries = _ReviewMap.validate_json(path.read_text(encoding="utf-8"))
         return cls(config, entries)
 
     def save(self) -> None:
         """Atomically write back to the vault."""
         path = self._config.review_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {nid: r.model_dump() for nid, r in self._entries.items()}
         tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        tmp.write_bytes(_ReviewMap.dump_json(self._entries, indent=2))
         tmp.replace(path)
 
     # -- seeding / enrolment ---------------------------------------------------
