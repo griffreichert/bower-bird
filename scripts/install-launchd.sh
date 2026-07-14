@@ -9,7 +9,7 @@
 # Runs `pull` only: pull queue → fetch+render → fill inbox/ (+ tool:/to-clip
 # routing). Cheap Haiku capture.
 #
-# build/weave/peck/forage are NOT run by this job — they remain manual, so their
+# build/weave/peck are NOT run by this job — they remain manual, so their
 # (Sonnet / subscription) cost is triggered deliberately, not on a timer.
 #
 # Usage: scripts/install-launchd.sh [INTERVAL_SECONDS]   (default: 900 = 15 min)

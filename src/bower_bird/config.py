@@ -220,16 +220,6 @@ class Config(BaseSettings):
         """
         return self.vault_path / "_review.json"
 
-    @property
-    def forage_path(self) -> Path:
-        """Gap-signal proposals written by the forage subcommand.
-
-        Propose-never-auto-fill: lists gap topics and search prompts only.
-        Nothing in inbox/ is ever written automatically — the human approves
-        items by hand. Pull-only; never written from the cron pass.
-        """
-        return self.vault_path / "forage.md"
-
 
 def load_config() -> Config:
     """Load config from the environment / .env. Raises RuntimeError with a
