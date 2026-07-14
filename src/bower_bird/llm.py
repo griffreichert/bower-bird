@@ -25,6 +25,7 @@ from bower_bird.fetch import PageMeta
 _DESCRIBE_MAX_TOKENS = 120
 _CLIPPING_MAX_TOKENS = 1200
 _JUDGE_MAX_TOKENS = 300
+_QUESTION_MAX_TOKENS = 200
 
 
 class FeynmanConcept(BaseModel):
@@ -157,8 +158,10 @@ class ClippingPlan(BaseModel):
 class JudgeVerdict(BaseModel):
     """LLM-as-judge grade for one `peck` recall answer.
 
-    Grades the learner's typed answer against the bower's model answer, so the
-    quiz loop is a real eval loop, not self-assessment.
+    Grades the learner's typed answer against the node's key ideas (+ seed
+    thought) as ground truth, so the quiz loop is a real eval loop, not
+    self-assessment. The full node body is never sent — only the distilled
+    key ideas (#18).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -174,20 +177,111 @@ class JudgeVerdict(BaseModel):
     )
 
 
+class QuizQuestion(BaseModel):
+    """A freshly-generated `peck` question for one source node (#18).
+
+    Generated at quiz time (never stored) so a node's question doesn't
+    degrade into recognition after a few reps. Depth scales with the
+    learner's Leitner box — see `generate_question`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(
+        description="A single quiz question, box-appropriate depth, grounded "
+        "only in the supplied key ideas (+ seed thought / linked titles)."
+    )
+
+
+def _key_ideas_block(key_ideas: list[str], seed: str) -> str:
+    ideas = "\n".join(f"- {idea}" for idea in key_ideas) if key_ideas else "(none)"
+    seed_line = f"\nReader's own note: {seed}" if seed else ""
+    return f"Key ideas:\n{ideas}{seed_line}"
+
+
+def _depth_instruction(box: int, linked_titles: list[str]) -> str:
+    """Depth scales with Leitner box (#18): 0-1 recall, 2-3 explain-simply,
+    4-5 application/connection (referencing linked nodes when available)."""
+    if box <= 1:
+        return "Ask a plain recall question about one of the key ideas."
+    if box <= 3:
+        return (
+            "Ask an explain-it-simply (Feynman-style) question — the learner "
+            "must restate a key idea in their own plain words, not just recall it."
+        )
+    if linked_titles:
+        titles = ", ".join(f"[[{t}]]" for t in linked_titles)
+        return (
+            "Ask an application/connection question — how does a key idea here "
+            f"relate to or apply with one of these linked notes: {titles}?"
+        )
+    return (
+        "Ask an application question — how would you use or connect one of "
+        "these key ideas elsewhere?"
+    )
+
+
+def generate_question(
+    key_ideas: list[str],
+    seed: str,
+    linked_titles: list[str],
+    box: int,
+    model: str,
+) -> QuizQuestion:
+    """Generate a fresh, box-appropriate quiz question (Haiku, no stored payload).
+
+    Grounded ONLY on the node's distilled key ideas + reader seed thought (+
+    linked titles at application depth) — never the full source body.
+    """
+    prompt = (
+        "You are writing ONE spaced-repetition quiz question for a learner "
+        "reviewing a note in their knowledge vault. Ground the question ONLY "
+        "in the material below — never invent facts from outside it.\n\n"
+        f"{_depth_instruction(box, linked_titles)}\n\n"
+        f"{_key_ideas_block(key_ideas, seed)}"
+    )
+    response = _client().messages.parse(
+        model=model,
+        max_tokens=_QUESTION_MAX_TOKENS,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=QuizQuestion,
+    )
+    result = response.parsed_output
+    if result is None:  # e.g. a refusal — caller falls back to a self-quiz.
+        raise RuntimeError("question generator returned nothing")
+    return result
+
+
 def judge_answer(
-    question: str, model_answer: str, user_answer: str, model: str
+    question: str,
+    key_ideas: list[str],
+    seed: str,
+    user_answer: str,
+    model: str,
+    linked_titles: list[str] | None = None,
 ) -> JudgeVerdict:
-    """Grade a peck answer against the model answer. LLM-as-judge (Haiku)."""
+    """Grade a peck answer against the node's key ideas. LLM-as-judge (Haiku).
+
+    Ground truth is the distilled key ideas (+ reader seed thought), not the
+    full node body (#18). At application depth (box 4-5, when linked_titles is
+    given) connection answers referencing a linked title get credit too.
+    """
+    linked_block = ""
+    if linked_titles:
+        titles = ", ".join(f"[[{t}]]" for t in linked_titles)
+        linked_block = (
+            f"\nLinked notes (credit answers that connect to these): {titles}"
+        )
     prompt = (
         "You are grading a spaced-repetition recall answer, Feynman-style. Grade "
-        "the learner's answer against the model answer:\n"
+        "the learner's answer against the key ideas below (the ground truth):\n"
         "- strong: captures the load-bearing idea, essentially correct.\n"
         "- weak: partially right but vague on or missing the core point.\n"
         "- wrong: incorrect, or a non-answer (blank / 'I don't know').\n"
         "Grade the UNDERSTANDING, not the wording or length. Give a one/two-line "
         "rationale addressed to the learner.\n\n"
         f"Question: {question}\n"
-        f"Model answer: {model_answer}\n"
+        f"{_key_ideas_block(key_ideas, seed)}{linked_block}\n"
         f"Learner's answer: {user_answer or '(blank)'}"
     )
     response = _client().messages.parse(
