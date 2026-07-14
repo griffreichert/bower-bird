@@ -130,6 +130,7 @@ src/bower_bird/
   ingest.py    owned-folder writes (sources/notes/inbox/to-clip/tools/_inbox), guarded
   inbox.py     clipper inbox scan: clip -> source note + links -> archive
   app.py       pull orchestration (Telegram queue + clipper inbox)
+  lint.py      read-only structural graph lint (orphans, broken links)
   __main__.py  `python -m bower_bird`
 tests/         router + ingest/inbox unit tests (pure logic, no network)
 scripts/       launchd install/uninstall, weave.sh (Claude Code Tier-2)

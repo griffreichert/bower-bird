@@ -8,6 +8,7 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   forage           Gather gap signals and write forage.md proposals (pull-only).
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
   drain            Resolve unchecked X links in to-clip.md into tweet digests.
+  lint             Read-only structural graph lint (orphans, broken links).
 """
 
 from __future__ import annotations
@@ -77,6 +78,14 @@ def main() -> int:
         from bower_bird.prune import main as prune_main
 
         return prune_main(config)
+
+    if subcommand == "lint":
+        config = _load()
+        if isinstance(config, int):
+            return config
+        from bower_bird.lint import main as lint_main
+
+        return lint_main(config)
 
     if subcommand == "drain":
         from bower_bird.app import run_drain
