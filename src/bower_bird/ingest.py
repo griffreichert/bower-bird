@@ -473,6 +473,7 @@ def append_to_telegram_inbox(config: Config, text: str, reason: str) -> None:
 _SOURCE_FRONTMATTER = """\
 ---
 title: "{title}"
+id: {source_id}
 source: "{url}"
 created: {today}
 description: "{description}"
@@ -537,9 +538,15 @@ def create_source_note(
     author = _yaml_scalar(meta.author or plan.author)
     author_line = f'author: "{author}"\n' if author else ""
 
+    # Every source is a peck card (antilibrary model, #18) — mint a stable id
+    # up front so the review store can key on it. `peck` enrols by scanning
+    # this id, not by any write here (no ingest-side coupling).
+    source_id = str(uuid.uuid4())
+
     parts = [
         _SOURCE_FRONTMATTER.format(
             title=_yaml_scalar(display_title),
+            source_id=source_id,
             url=_yaml_scalar(meta.url),
             today=_today(),
             description=_yaml_scalar(plan.description),
