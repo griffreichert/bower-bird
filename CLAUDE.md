@@ -143,6 +143,25 @@ The Tier-2 synthesis playbook lives at `BowerBird/CLAUDE.md` inside the vault
 Data schemas are **pydantic models**; `Config`/`State` stay plain (plumbing, not
 contracts).
 
+## Code standards (repo-specific)
+
+General rules live in the maintained skills (purge-slop, review-slop,
+pydantic-principles) — don't restate them here. Local conventions:
+
+- **Pydantic data contracts live in `schema.py`.** New/rewritten models land
+  there; pre-existing stragglers move in the post-#25 structure pass. Stateful
+  classes with behavior (e.g. `ReviewStore`) stay in their module.
+- **`Config()` is the loader.** No wrapper loaders — validation and env
+  handling (e.g. the ANTHROPIC_API_KEY launchd export) live inside the class
+  via field validators and `model_post_init`.
+- **LLM tunables live on `LLMSettings`** in `config.py`: model names (incl.
+  per-lane overrides like the PDF lane's Sonnet) and per-call max-token caps.
+  No scattered module-level `_MAX_*` constants.
+- **Module-level functions are importable** — no `_` prefix outside classes;
+  names say what the function does.
+- **Structure:** flat package by design at this size; don't add subpackages.
+  `ingest.py` splits after #25 lands, not before.
+
 ## Dev workflow
 
 - **Env:** `uv` (Python ≥ 3.11, pinned 3.13). `uv sync` builds `.venv` and
