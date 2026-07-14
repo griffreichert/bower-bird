@@ -5,7 +5,6 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   pull             Pull the Telegram queue only (links → inbox/).
   build            Build bowers from read+annotated trinkets/ → brain/bowers/.
   peck             Run a spaced-rep quiz session over due bowers (pull-only).
-  forage           Gather gap signals and write forage.md proposals (pull-only).
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
   drain            Resolve unchecked X links in to-clip.md into tweet digests.
   lint             Read-only structural graph lint (orphans, broken links).
@@ -62,14 +61,6 @@ def main() -> int:
         from bower_bird.review import main as peck_main
 
         return peck_main(config, args[1:])
-
-    if subcommand == "forage":
-        config = _load()
-        if isinstance(config, int):
-            return config
-        from bower_bird.forage import main as forage_main
-
-        return forage_main(config)
 
     if subcommand == "prune":
         config = _load()

@@ -47,7 +47,6 @@ tools.md          tools & gadgets shelf (plugins, repos) — not knowledge
 to-clip.md        links the bot couldn't fetch — clip these manually
 archive/          full clip originals, kept cold (leave alone)
 digests/          dated synthesis notes Claude writes for you
-forage.md         gaps the system spotted — thin spots to read into
 _inbox.md         couldn't be auto-processed
 ```
 

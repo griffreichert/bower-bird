@@ -44,7 +44,6 @@ to-clip.md             links the bot couldn't fetch OR resolve — human clips t
 let-go.md              ledger of inbox docs unread past the TTL — moved to
                        archive/unread/, one line each, nothing deleted
 _inbox.md              Telegram messages that couldn't be auto-processed
-forage.md              gap-signal proposals (where the graph is thin) — Tier-1 hints
 _review.json           spaced-rep review state for the peck quiz loop (don't edit)
 ```
 
@@ -168,7 +167,7 @@ Run when asked, or via `make digest` (from the repo). Procedure:
 2. **Read** the new/changed notes under `brain/` (sources + bowers) in the window.
    Pay special attention to `## Highlights`, `## Dig deeper`, and `## Open
    questions` — promote highlights into bower concepts, route the rest (see
-   *Reader marks* above). Check `forage.md` for Tier-1 gap signals.
+   *Reader marks* above).
 3. **Read the previous digest's `## Feedback` section** — the human's notes on
    what they found interesting / want to go deeper on. Let it steer this run:
    weight connections and next-reads toward what they flagged.
