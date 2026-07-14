@@ -213,14 +213,15 @@ def run_drain(config: Config | None = None) -> int:
 
 
 def pull_telegram(config: Config, state: State) -> int:
+    token = config.telegram_bot_token.get_secret_value()
     updates = telegram.get_updates(
-        config.telegram_bot_token,
+        token,
         offset=state.telegram_offset,
         limit=config.queue_limit,
         timeout=config.fetch_timeout,
     )
 
-    allowed = config.allowed_chat_id_set
+    allowed = config.allowed_chat_ids
     if not allowed:
         print(
             "warning: BOWER_ALLOWED_CHAT_IDS is unset — the bot accepts messages "
@@ -257,7 +258,7 @@ def pull_telegram(config: Config, state: State) -> int:
             receipt = "⚠️ Couldn't process that one."
 
         try:
-            telegram.send_message(config.telegram_bot_token, update.chat_id, receipt)
+            telegram.send_message(token, update.chat_id, receipt)
         except Exception:  # noqa: BLE001 — a failed receipt must not stall the queue
             pass
 
