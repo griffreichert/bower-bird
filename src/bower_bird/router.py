@@ -13,8 +13,6 @@ explicit I-read-this marker, not a note. An explicit `tool:` prefix overrides
 everything — it's a keep-for-later shelf item, not knowledge.
 """
 
-from __future__ import annotations
-
 import re
 from enum import StrEnum
 
@@ -43,7 +41,7 @@ class Parsed(BaseModel):
     note: str  # the user's surrounding note ("why"), empty for bare links
 
 
-def _strip_trailing_punct(url: str) -> str:
+def strip_trailing_punct(url: str) -> str:
     return url.rstrip(").,;]>”\"'")
 
 
@@ -55,7 +53,7 @@ def parse(text: str) -> Parsed:
         match = _URL_RE.search(body)
         if not match:
             return Parsed(lane=Lane.NO_LINK, url=None, note=text.strip())
-        url = _strip_trailing_punct(match.group(0))
+        url = strip_trailing_punct(match.group(0))
         note = (body[: match.start()] + body[match.end() :]).strip()
         return Parsed(lane=Lane.TOOL, url=url, note=note)
 
@@ -66,7 +64,7 @@ def parse(text: str) -> Parsed:
     if not match:
         return Parsed(lane=Lane.NO_LINK, url=None, note=text.strip())
 
-    url = _strip_trailing_punct(match.group(0))
+    url = strip_trailing_punct(match.group(0))
     note = (body[: match.start()] + body[match.end() :]).strip()
 
     if _READ_TOKEN_RE.match(note):

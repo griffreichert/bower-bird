@@ -94,8 +94,8 @@ else**. Writable at runtime: `inbox/`, `tweets/`, `brain/sources/`,
 `to-clip.md`, `tools.md`, `let-go.md`, `_inbox.md`,
 `digests/`.
 
-Writes are additive: new files, or `_append_link` appends under `## Links` —
-existing notes are never rewritten. `ingest._assert_writable` enforces the
+Writes are additive: new files, or `append_link` appends under `## Links` —
+existing notes are never rewritten. `ingest.assert_writable` enforces the
 folder boundary in code — keep it that way. (The `notes/` symlink in the repo
 points at the project's *planning* notes, a different folder from the runtime
 `BowerBird/`.)

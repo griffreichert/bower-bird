@@ -33,7 +33,7 @@ from bower_bird.state import State, content_hash
 _BODY_LIMIT = 6000
 
 
-def _is_processable(path: Path) -> bool:
+def is_processable(path: Path) -> bool:
     """Skip dotfiles and iCloud/Obsidian sync-conflict copies."""
     name = path.name
     if name.startswith("."):
@@ -42,7 +42,7 @@ def _is_processable(path: Path) -> bool:
     return not ("conflicted copy" in lowered or ".sync-conflict" in lowered)
 
 
-def _parse_clip(text: str) -> tuple[dict[str, str], str]:
+def parse_clip(text: str) -> tuple[dict[str, str], str]:
     """Split a clip into a flat frontmatter dict and its markdown body.
 
     Minimal on purpose — we only read title/source/description; no YAML dep.
@@ -61,7 +61,7 @@ def _parse_clip(text: str) -> tuple[dict[str, str], str]:
     return fm, body
 
 
-def _clip_to_meta(
+def clip_to_meta(
     path: Path, fm: dict[str, str], body: str, fallback_url: str = ""
 ) -> PageMeta:
     return PageMeta(
@@ -73,20 +73,20 @@ def _clip_to_meta(
     )
 
 
-def _archive(config: Config, path: Path, new_stem: str | None = None) -> None:
+def archive_clip(config: Config, path: Path, new_stem: str | None = None) -> None:
     config.archive_dir.mkdir(parents=True, exist_ok=True)
     # The cold copy can carry the concise (fluff-free) name once we have one;
     # content is untouched, only the filename shortens.
-    stem = ingest._safe_filename(new_stem) if new_stem else path.stem
+    stem = ingest.safe_filename(new_stem) if new_stem else path.stem
     dest = config.archive_dir / f"{stem}{path.suffix}"
     if dest.exists():
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         dest = config.archive_dir / f"{stem}.{stamp}{path.suffix}"
-    ingest._assert_writable(config, dest)
+    ingest.assert_writable(config, dest)
     shutil.move(str(path), str(dest))
 
 
-def _file_clip(
+def file_clip(
     config: Config, meta: PageMeta, body: str
 ) -> tuple[Path | None, str, str]:
     """Synthesise one read body into the graph: marks → plan → source note +
@@ -108,7 +108,7 @@ def _file_clip(
         meta,
         "",
         candidates,
-        model=config.build_model,
+        config.llm,
         highlights=marks.highlights,
         body_urls=body_urls,
         person_anchors=marks.person_anchors,
@@ -124,7 +124,7 @@ def _file_clip(
     # Concise (fluff-free) title threads through the source ref + the archive
     # name so the graph node, its backlinks, and the cold copy all match.
     display_title = (plan.concise_title or meta.title).strip() or meta.title
-    source_title = ingest._safe_filename(display_title)
+    source_title = ingest.safe_filename(display_title)
 
     # File named entities (tools, people) as their own leaf nodes.
     entity_ids = ingest.file_entities(config, plan, source_title)
@@ -168,7 +168,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
 
     log: list[str] = []
     for path in sorted(config.trinkets_dir.glob("*.md")):
-        if not _is_processable(path):
+        if not is_processable(path):
             continue
         try:
             raw = path.read_text(encoding="utf-8")
@@ -178,12 +178,12 @@ def process_inbox(config: Config, state: State) -> list[str]:
 
         digest = content_hash(raw)
         if state.seen_hash(digest):
-            _archive(config, path)  # already processed; just clear the inbox
+            archive_clip(config, path)  # already processed; just clear the inbox
             log.append(f"dup {path.name}: already processed, archived")
             continue
 
-        fm, body = _parse_clip(raw)
-        meta = _clip_to_meta(
+        fm, body = parse_clip(raw)
+        meta = clip_to_meta(
             path, fm, body, fallback_url=pick_source_url(extract_urls(body))
         )
         # Same source re-clipped gets fresh bytes + a fresh LLM title, so the
@@ -193,12 +193,12 @@ def process_inbox(config: Config, state: State) -> list[str]:
         # capture time, so this guard would false-dup every one of them — the
         # content hash above still stops a double gather.
         if fm.get("bower") != "bot-rendered" and meta.url and state.seen_url(meta.url):
-            _archive(config, path, new_stem=meta.title)
+            archive_clip(config, path, new_stem=meta.title)
             log.append(f"dup {path.name}: url already processed, archived")
             continue
 
         try:
-            note_path, display_title, detail = _file_clip(config, meta, body)
+            note_path, display_title, detail = file_clip(config, meta, body)
         except Exception as exc:  # noqa: BLE001 — one bad clip must not stall the rest
             log.append(f"error {path.name}: {exc}")
             continue
@@ -207,7 +207,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
         if meta.url:
             state.mark_url(meta.url)
         state.save()
-        _archive(config, path, new_stem=display_title)
+        archive_clip(config, path, new_stem=display_title)
 
         if note_path is None:
             log.append(f"{path.name}: source note already existed; archived")

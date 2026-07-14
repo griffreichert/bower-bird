@@ -10,26 +10,26 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   lint             Read-only structural graph lint (orphans, broken links).
 """
 
-from __future__ import annotations
-
 import sys
 
+from pydantic import ValidationError
+
 from bower_bird.app import run_all, run_gather, run_telegram
-from bower_bird.config import Config, load_config
+from bower_bird.config import Config
 
 
-def _load() -> Config | int:
+def config_or_exit() -> Config | int:
     """Load config, or return exit code 2 on failure (with a message)."""
     try:
-        return load_config()
-    except RuntimeError as exc:
+        return Config()
+    except ValidationError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
 
 
-def _run(fn) -> int:
+def run_lane(fn) -> int:
     """Run a count-returning lane; print a summary, exit 0 (count != exit code)."""
-    config = _load()
+    config = config_or_exit()
     if isinstance(config, int):
         return config
     count = fn(config)
@@ -40,12 +40,12 @@ def _run(fn) -> int:
 
 def pull() -> int:
     """`uv run pull` — pull the Telegram queue."""
-    return _run(run_telegram)
+    return run_lane(run_telegram)
 
 
 def build() -> int:
     """`uv run build` — build bowers from trinkets/."""
-    return _run(run_gather)
+    return run_lane(run_gather)
 
 
 def main() -> int:
@@ -55,7 +55,7 @@ def main() -> int:
     subcommand = args[0] if args else None
 
     if subcommand == "peck":
-        config = _load()
+        config = config_or_exit()
         if isinstance(config, int):
             return config
         from bower_bird.review import main as peck_main
@@ -63,7 +63,7 @@ def main() -> int:
         return peck_main(config, args[1:])
 
     if subcommand == "prune":
-        config = _load()
+        config = config_or_exit()
         if isinstance(config, int):
             return config
         from bower_bird.prune import main as prune_main
@@ -71,7 +71,7 @@ def main() -> int:
         return prune_main(config)
 
     if subcommand == "lint":
-        config = _load()
+        config = config_or_exit()
         if isinstance(config, int):
             return config
         from bower_bird.lint import main as lint_main
@@ -81,13 +81,13 @@ def main() -> int:
     if subcommand == "drain":
         from bower_bird.app import run_drain
 
-        return _run(run_drain)
+        return run_lane(run_drain)
 
     if subcommand == "pull":
-        return _run(run_telegram)
+        return run_lane(run_telegram)
     if subcommand == "build":
-        return _run(run_gather)
-    return _run(run_all)
+        return run_lane(run_gather)
+    return run_lane(run_all)
 
 
 if __name__ == "__main__":

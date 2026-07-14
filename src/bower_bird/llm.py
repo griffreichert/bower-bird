@@ -18,14 +18,8 @@ from typing import Literal
 import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
+from bower_bird.config import LLMSettings
 from bower_bird.fetch import PageMeta
-
-# Haiku 4.5 does not take `thinking`/`effort` params — omit them. Small caps:
-# these are one-liners and short JSON, not essays.
-_DESCRIBE_MAX_TOKENS = 120
-_CLIPPING_MAX_TOKENS = 1200
-_JUDGE_MAX_TOKENS = 300
-_QUESTION_MAX_TOKENS = 200
 
 
 class FeynmanConcept(BaseModel):
@@ -193,13 +187,13 @@ class QuizQuestion(BaseModel):
     )
 
 
-def _key_ideas_block(key_ideas: list[str], seed: str) -> str:
+def key_ideas_block(key_ideas: list[str], seed: str) -> str:
     ideas = "\n".join(f"- {idea}" for idea in key_ideas) if key_ideas else "(none)"
     seed_line = f"\nReader's own note: {seed}" if seed else ""
     return f"Key ideas:\n{ideas}{seed_line}"
 
 
-def _depth_instruction(box: int, linked_titles: list[str]) -> str:
+def depth_instruction(box: int, linked_titles: list[str]) -> str:
     """Depth scales with Leitner box (#18): 0-1 recall, 2-3 explain-simply,
     4-5 application/connection (referencing linked nodes when available)."""
     if box <= 1:
@@ -226,7 +220,7 @@ def generate_question(
     seed: str,
     linked_titles: list[str],
     box: int,
-    model: str,
+    llm: LLMSettings,
 ) -> QuizQuestion:
     """Generate a fresh, box-appropriate quiz question (Haiku, no stored payload).
 
@@ -237,12 +231,12 @@ def generate_question(
         "You are writing ONE spaced-repetition quiz question for a learner "
         "reviewing a note in their knowledge vault. Ground the question ONLY "
         "in the material below — never invent facts from outside it.\n\n"
-        f"{_depth_instruction(box, linked_titles)}\n\n"
-        f"{_key_ideas_block(key_ideas, seed)}"
+        f"{depth_instruction(box, linked_titles)}\n\n"
+        f"{key_ideas_block(key_ideas, seed)}"
     )
-    response = _client().messages.parse(
-        model=model,
-        max_tokens=_QUESTION_MAX_TOKENS,
+    response = anthropic_client().messages.parse(
+        model=llm.model,
+        max_tokens=llm.question_max_tokens,
         messages=[{"role": "user", "content": prompt}],
         output_format=QuizQuestion,
     )
@@ -257,7 +251,7 @@ def judge_answer(
     key_ideas: list[str],
     seed: str,
     user_answer: str,
-    model: str,
+    llm: LLMSettings,
     linked_titles: list[str] | None = None,
 ) -> JudgeVerdict:
     """Grade a peck answer against the node's key ideas. LLM-as-judge (Haiku).
@@ -281,12 +275,12 @@ def judge_answer(
         "Grade the UNDERSTANDING, not the wording or length. Give a one/two-line "
         "rationale addressed to the learner.\n\n"
         f"Question: {question}\n"
-        f"{_key_ideas_block(key_ideas, seed)}{linked_block}\n"
+        f"{key_ideas_block(key_ideas, seed)}{linked_block}\n"
         f"Learner's answer: {user_answer or '(blank)'}"
     )
-    response = _client().messages.parse(
-        model=model,
-        max_tokens=_JUDGE_MAX_TOKENS,
+    response = anthropic_client().messages.parse(
+        model=llm.model,
+        max_tokens=llm.judge_max_tokens,
         messages=[{"role": "user", "content": prompt}],
         output_format=JudgeVerdict,
     )
@@ -299,19 +293,19 @@ def judge_answer(
     return verdict
 
 
-def _client() -> anthropic.Anthropic:
+def anthropic_client() -> anthropic.Anthropic:
     # Reads ANTHROPIC_API_KEY from the environment.
     return anthropic.Anthropic()
 
 
-def _first_text(message) -> str:
+def first_text(message) -> str:
     for block in message.content:
         if block.type == "text":
             return block.text
     return ""
 
 
-def describe_link(meta: PageMeta, model: str) -> str:
+def describe_link(meta: PageMeta, llm: LLMSettings) -> str:
     prompt = (
         "Identify what this web page is in ONE short line (under 15 words). "
         "State the type and topic (e.g. 'Blog post on Rust async internals', "
@@ -322,12 +316,12 @@ def describe_link(meta: PageMeta, model: str) -> str:
         f"Title: {meta.title}\n"
         f"Description: {meta.description or '(none)'}"
     )
-    msg = _client().messages.create(
-        model=model,
-        max_tokens=_DESCRIBE_MAX_TOKENS,
+    msg = anthropic_client().messages.create(
+        model=llm.model,
+        max_tokens=llm.describe_max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
-    line = _first_text(msg).strip().strip('"')
+    line = first_text(msg).strip().strip('"')
     return line or meta.title
 
 
@@ -335,7 +329,7 @@ def synthesize_clipping(
     meta: PageMeta,
     note: str,
     candidate_index: str,
-    model: str,
+    llm: LLMSettings,
     highlights: list[str] | None = None,
     body_urls: list[str] | None = None,
     person_anchors: list[str] | None = None,
@@ -409,9 +403,9 @@ def synthesize_clipping(
         f"{candidates}\n\n"
         f"Source excerpt (context only):\n{meta.body_excerpt[:3000]}"
     )
-    response = _client().messages.parse(
-        model=model,
-        max_tokens=_CLIPPING_MAX_TOKENS,
+    response = anthropic_client().messages.parse(
+        model=llm.build_model,
+        max_tokens=llm.clipping_max_tokens,
         messages=[{"role": "user", "content": prompt}],
         output_format=ClippingPlan,
     )

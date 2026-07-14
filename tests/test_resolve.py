@@ -4,10 +4,10 @@ Run: uv run python tests/test_resolve.py
 """
 
 from bower_bird.resolve import (
-    _from_fxtwitter,
-    _from_syndication,
-    _syndication_token,
+    from_fxtwitter,
+    from_syndication,
     parse_tweet_id,
+    syndication_token,
 )
 
 PARSE_ID_CASES = [
@@ -71,13 +71,13 @@ def main() -> int:
             print(f"FAIL parse_tweet_id({url!r}): want {want!r} got {got!r}")
 
     # Golden syndication token, computed by hand against the live endpoint.
-    token = _syndication_token("2073277317464682723")
+    token = syndication_token("2073277317464682723")
     want_token = "5xe51zd2qill18"
     if token != want_token:
         failures += 1
-        print(f"FAIL _syndication_token: want {want_token!r} got {token!r}")
+        print(f"FAIL syndication_token: want {want_token!r} got {token!r}")
 
-    tweet = _from_fxtwitter(FXTWITTER_FULL)
+    tweet = from_fxtwitter(FXTWITTER_FULL)
     if tweet is None or (
         tweet.id,
         tweet.url,
@@ -98,9 +98,9 @@ def main() -> int:
         "bob",
     ):
         failures += 1
-        print(f"FAIL _from_fxtwitter full: got {tweet!r}")
+        print(f"FAIL from_fxtwitter full: got {tweet!r}")
 
-    tweet = _from_fxtwitter(FXTWITTER_MINIMAL)
+    tweet = from_fxtwitter(FXTWITTER_MINIMAL)
     if tweet is None or (
         tweet.id,
         tweet.url,
@@ -111,13 +111,13 @@ def main() -> int:
         tweet.in_reply_to,
     ) != ("222", "https://x.com/dave/status/222", "dave", "minimal tweet", "", "", ""):
         failures += 1
-        print(f"FAIL _from_fxtwitter minimal: got {tweet!r}")
+        print(f"FAIL from_fxtwitter minimal: got {tweet!r}")
 
-    if _from_fxtwitter({"code": 404}) is not None:
+    if from_fxtwitter({"code": 404}) is not None:
         failures += 1
-        print("FAIL _from_fxtwitter: code!=200 should return None")
+        print("FAIL from_fxtwitter: code!=200 should return None")
 
-    tweet = _from_syndication(SYNDICATION_FULL)
+    tweet = from_syndication(SYNDICATION_FULL)
     if tweet is None or (
         tweet.id,
         tweet.url,
@@ -138,9 +138,9 @@ def main() -> int:
         "frank",
     ):
         failures += 1
-        print(f"FAIL _from_syndication full: got {tweet!r}")
+        print(f"FAIL from_syndication full: got {tweet!r}")
 
-    tweet = _from_syndication(SYNDICATION_MINIMAL)
+    tweet = from_syndication(SYNDICATION_MINIMAL)
     if tweet is None or (
         tweet.id,
         tweet.url,
@@ -159,7 +159,7 @@ def main() -> int:
         "",
     ):
         failures += 1
-        print(f"FAIL _from_syndication minimal: got {tweet!r}")
+        print(f"FAIL from_syndication minimal: got {tweet!r}")
 
     if failures:
         print(f"\n{failures} failure(s).")

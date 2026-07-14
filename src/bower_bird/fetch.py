@@ -8,8 +8,6 @@ We must NEVER distill an article that hasn't been read (INVARIANTS). The inbox
 doc is a rendered copy, not a summary — the full text is there for the human.
 """
 
-from __future__ import annotations
-
 import ipaddress
 import socket
 from io import BytesIO
@@ -58,7 +56,7 @@ def needs_clipping(url: str) -> bool:
 _MAX_REDIRECTS = 5
 
 
-def _is_public_host(host: str) -> bool:
+def is_public_host(host: str) -> bool:
     """True only if every IP `host` resolves to is publicly routable.
 
     SSRF guard: URLs come from untrusted Telegram messages, so a fetch must not
@@ -85,7 +83,7 @@ def _is_public_host(host: str) -> bool:
     return True
 
 
-def _safe_get(url: str, timeout: float) -> httpx.Response:
+def safe_get(url: str, timeout: float) -> httpx.Response:
     """GET with an SSRF guard, following redirects manually so every hop is
     re-validated (a public URL can 30x-redirect into internal space).
 
@@ -102,7 +100,7 @@ def _safe_get(url: str, timeout: float) -> httpx.Response:
             parsed = urlparse(url)
             if parsed.scheme not in ("http", "https"):
                 raise ValueError(f"blocked non-http(s) scheme: {parsed.scheme}")
-            if not _is_public_host(parsed.hostname or ""):
+            if not is_public_host(parsed.hostname or ""):
                 raise ValueError(f"blocked non-public host: {parsed.hostname}")
             resp = client.get(url)
             if resp.is_redirect and resp.has_redirect_location:
@@ -129,7 +127,7 @@ class PageMeta(BaseModel):
         return not self.description and (not self.title or self.title == self.url)
 
 
-def _meta_content(soup: BeautifulSoup, *names: str) -> str:
+def meta_content(soup: BeautifulSoup, *names: str) -> str:
     for name in names:
         tag = soup.find("meta", attrs={"property": name}) or soup.find(
             "meta", attrs={"name": name}
@@ -139,7 +137,7 @@ def _meta_content(soup: BeautifulSoup, *names: str) -> str:
     return ""
 
 
-def _render_markdown(soup: BeautifulSoup) -> str:
+def render_markdown(soup: BeautifulSoup) -> str:
     """Render a readable markdown body from a parsed page.
 
     Strips boilerplate (script/style/nav/footer/header/aside), picks the main
@@ -167,23 +165,23 @@ def _render_markdown(soup: BeautifulSoup) -> str:
 
 def fetch(url: str, timeout: float) -> PageMeta:
     try:
-        resp = _safe_get(url, timeout)
+        resp = safe_get(url, timeout)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception:
         # Non-fatal: an unreachable or blocked link still gets captured, thinner.
         return PageMeta(url=url, title=url, description="", body_excerpt="")
 
-    title = _meta_content(soup, "og:title", "twitter:title")
+    title = meta_content(soup, "og:title", "twitter:title")
     if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
     if not title:
         title = url
 
-    description = _meta_content(
+    description = meta_content(
         soup, "og:description", "twitter:description", "description"
     )
-    author = _meta_content(soup, "article:author", "author", "twitter:creator")
+    author = meta_content(soup, "article:author", "author", "twitter:creator")
 
     for tag in soup(["script", "style", "nav", "footer", "header"]):
         tag.decompose()
@@ -207,7 +205,7 @@ def fetch_pdf(url: str, timeout: float) -> PageMeta:
     PDF with no extractable text; the caller routes those to the clip queue.
     """
     try:
-        resp = _safe_get(url, timeout)
+        resp = safe_get(url, timeout)
         resp.raise_for_status()
         if len(resp.content) > _MAX_PDF_BYTES:
             raise ValueError(f"pdf too large: {len(resp.content)} bytes")
@@ -247,24 +245,24 @@ def fetch_rendered(url: str, timeout: float) -> tuple[PageMeta, str]:
     check `meta.is_thin` to decide whether to route to the clip queue instead.
     """
     try:
-        resp = _safe_get(url, timeout)
+        resp = safe_get(url, timeout)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception:
         return PageMeta(url=url, title=url, description="", body_excerpt=""), ""
 
-    title = _meta_content(soup, "og:title", "twitter:title")
+    title = meta_content(soup, "og:title", "twitter:title")
     if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
     if not title:
         title = url
 
-    description = _meta_content(
+    description = meta_content(
         soup, "og:description", "twitter:description", "description"
     )
 
     # Markdown body for the readable doc (richer structure than body_excerpt).
-    body = _render_markdown(soup)
+    body = render_markdown(soup)
 
     # Also derive body_excerpt for the PageMeta (shared with other callers).
     for tag in soup(["script", "style", "nav", "footer", "header"]):

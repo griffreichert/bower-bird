@@ -4,8 +4,6 @@ teach-first / grading surface, and ShelfCensus. Pure logic / no network.
 Run: uv run python tests/test_review.py
 """
 
-from __future__ import annotations
-
 import json
 import sys
 import tempfile
@@ -21,8 +19,8 @@ from bower_bird.review import (
     Review,
     ReviewStore,
     ShelfCensus,
-    _judge,
-    _read_grade,
+    judge_review,
+    read_grade,
     scan_sources,
 )
 
@@ -561,32 +559,32 @@ def test_shelf_census_buckets() -> None:
 
 def _queue_prompts(answers: list[str]) -> None:
     it = iter(answers)
-    review._prompt = lambda msg: next(it)  # type: ignore[assignment]
+    review.prompt_user = lambda msg: next(it)  # type: ignore[assignment]
 
 
 def test_read_grade_enter_accepts_judge_default() -> None:
     _queue_prompts([""])
-    check(_read_grade("strong") == "strong", "enter accepts judge default")
+    check(read_grade("strong") == "strong", "enter accepts judge default")
 
 
 def test_read_grade_override_beats_default() -> None:
     _queue_prompts(["x"])
-    check(_read_grade("strong") == "wrong", "override wins over default")
+    check(read_grade("strong") == "wrong", "override wins over default")
 
 
 def test_read_grade_no_default_requires_explicit() -> None:
     _queue_prompts(["", "w"])
-    check(_read_grade(None) == "weak", "no default → enter reprompts, then w")
+    check(read_grade(None) == "weak", "no default → enter reprompts, then w")
 
 
 def test_read_action_recognises_bad_and_retire() -> None:
     _queue_prompts(["b"])
-    check(review._read_action(None) == "bad", "'b' → bad")
+    check(review.read_action(None) == "bad", "'b' → bad")
     _queue_prompts(["d"])
-    check(review._read_action(None) == "retire", "'d' → retire")
+    check(review.read_action(None) == "retire", "'d' → retire")
 
 
-def test_judge_returns_grade_from_verdict() -> None:
+def testjudge_review_returns_grade_from_verdict() -> None:
     class _V:
         grade = "weak"
         rationale = "missed the core point"
@@ -597,12 +595,14 @@ def test_judge_returns_grade_from_verdict() -> None:
         with tempfile.TemporaryDirectory() as d:
             cfg = _config(Path(d))
             node = review.SourceNode(id="x", title="X", key_ideas=["a"])
-            check(_judge(cfg, "q", node, 0, "ans") == "weak", "judge grade surfaced")
+            check(
+                judge_review(cfg, "q", node, 0, "ans") == "weak", "judge grade surfaced"
+            )
     finally:
         llm.judge_answer = orig
 
 
-def test_judge_failure_falls_back_to_manual() -> None:
+def testjudge_review_failure_falls_back_to_manual() -> None:
     def _boom(q, ki, seed, a, model, linked=None):
         raise RuntimeError("no API key")
 
@@ -612,7 +612,7 @@ def test_judge_failure_falls_back_to_manual() -> None:
         with tempfile.TemporaryDirectory() as d:
             cfg = _config(Path(d))
             node = review.SourceNode(id="x", title="X", key_ideas=["a"])
-            check(_judge(cfg, "q", node, 0, "ans") is None, "judge error → None")
+            check(judge_review(cfg, "q", node, 0, "ans") is None, "judge error → None")
     finally:
         llm.judge_answer = orig
 
@@ -628,7 +628,7 @@ def test_generate_question_failure_falls_back_to_none() -> None:
             cfg = _config(Path(d))
             node = review.SourceNode(id="x", title="X", key_ideas=["a"])
             check(
-                review._generate_question(cfg, node, 0) is None,
+                review.question_for_node(cfg, node, 0) is None,
                 "question generator error → None (self-quiz fallback)",
             )
     finally:
@@ -668,8 +668,8 @@ if __name__ == "__main__":
     test_read_grade_override_beats_default()
     test_read_grade_no_default_requires_explicit()
     test_read_action_recognises_bad_and_retire()
-    test_judge_returns_grade_from_verdict()
-    test_judge_failure_falls_back_to_manual()
+    testjudge_review_returns_grade_from_verdict()
+    testjudge_review_failure_falls_back_to_manual()
     test_generate_question_failure_falls_back_to_none()
 
     if _failures:

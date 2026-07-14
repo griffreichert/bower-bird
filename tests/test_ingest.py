@@ -41,10 +41,10 @@ def test_assert_writable() -> None:
         root.mkdir()
         cfg = _config(root)
         # inside is fine
-        ingest._assert_writable(cfg, root / "sources" / "x.md")
+        ingest.assert_writable(cfg, root / "sources" / "x.md")
         # outside the owned folder is refused
         try:
-            ingest._assert_writable(cfg, Path(d) / "elsewhere.md")
+            ingest.assert_writable(cfg, Path(d) / "elsewhere.md")
             check(False, "expected PermissionError writing outside owned folder")
         except PermissionError:
             pass
@@ -62,14 +62,14 @@ def test_append_link_additive_and_idempotent() -> None:
             encoding="utf-8",
         )
 
-        ingest._append_link(cfg, note, "Some Source")
+        ingest.append_link(cfg, note, "Some Source")
         text = note.read_text(encoding="utf-8")
         check("My own prose." in text, "human prose preserved on append")
         check("- [[Some Source]]" in text, "link appended")
         check("## Links" in text, "Links heading created")
 
         # idempotent: second append does not duplicate
-        ingest._append_link(cfg, note, "Some Source")
+        ingest.append_link(cfg, note, "Some Source")
         text2 = note.read_text(encoding="utf-8")
         check(text2.count("- [[Some Source]]") == 1, "append is idempotent")
 
@@ -214,7 +214,7 @@ def test_parse_clip() -> None:
         "---\n"
         "# My Clip\n\nThe real content here.\n"
     )
-    fm, body = inbox._parse_clip(raw)
+    fm, body = inbox.parse_clip(raw)
     check(fm.get("title") == "My Clip", "clip title parsed")
     check(fm.get("source") == "https://example.com/a", "clip source parsed")
     check(body.startswith("# My Clip"), "body separated from frontmatter")
@@ -379,9 +379,9 @@ def test_fetch_helpers() -> None:
 
 
 def test_conflict_files_skipped() -> None:
-    check(not inbox._is_processable(Path("note (conflicted copy).md")), "skip conflict")
-    check(not inbox._is_processable(Path(".hidden.md")), "skip dotfile")
-    check(inbox._is_processable(Path("normal.md")), "process normal file")
+    check(not inbox.is_processable(Path("note (conflicted copy).md")), "skip conflict")
+    check(not inbox.is_processable(Path(".hidden.md")), "skip dotfile")
+    check(inbox.is_processable(Path("normal.md")), "process normal file")
 
 
 def _concept(handle: str = "Retrieval Augmented Generation") -> FeynmanConcept:
@@ -782,7 +782,7 @@ def test_file_entities_creates_leaf_nodes() -> None:
 def test_yaml_scalar_neutralizes_injection() -> None:
     # Newline-injected frontmatter key + a double-quote are both neutralized.
     hostile = 'Real Title"\ninjected: true\nmore'
-    out = ingest._yaml_scalar(hostile)
+    out = ingest.yaml_scalar(hostile)
     check("\n" not in out, "yaml scalar strips newlines (no key injection)")
     check('"' not in out, "yaml scalar removes double-quotes")
 
@@ -821,20 +821,20 @@ def test_write_concept_section_survives_backslash_model_output() -> None:
         test_question="q",
         model_answer="a",
     )
-    seeded = ingest._write_concept_section("# x\n", concept)
-    reapplied = ingest._write_concept_section(seeded, concept)  # exercises .sub path
+    seeded = ingest.write_concept_section("# x\n", concept)
+    reapplied = ingest.write_concept_section(seeded, concept)  # exercises .sub path
     check(r"\1" in reapplied, "backslash model text inserted literally, no crash")
 
 
 def test_ssrf_guard_rejects_internal_hosts() -> None:
     from bower_bird import fetch as _fetch
 
-    check(not _fetch._is_public_host("localhost"), "localhost blocked")
-    check(not _fetch._is_public_host("127.0.0.1"), "loopback blocked")
-    check(not _fetch._is_public_host("169.254.169.254"), "link-local metadata blocked")
-    check(not _fetch._is_public_host("10.0.0.1"), "RFC1918 blocked")
-    check(not _fetch._is_public_host(""), "empty host blocked")
-    check(_fetch._is_public_host("example.com"), "public host allowed")
+    check(not _fetch.is_public_host("localhost"), "localhost blocked")
+    check(not _fetch.is_public_host("127.0.0.1"), "loopback blocked")
+    check(not _fetch.is_public_host("169.254.169.254"), "link-local metadata blocked")
+    check(not _fetch.is_public_host("10.0.0.1"), "RFC1918 blocked")
+    check(not _fetch.is_public_host(""), "empty host blocked")
+    check(_fetch.is_public_host("example.com"), "public host allowed")
 
 
 def test_allowed_chat_id_set_parsing() -> None:

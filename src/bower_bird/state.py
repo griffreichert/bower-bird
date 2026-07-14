@@ -12,8 +12,6 @@ double-processed. Two layers:
   being moved to `archive/`.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -33,7 +31,7 @@ class State:
     processed_hashes: set[str] = field(default_factory=set)
 
     @classmethod
-    def load(cls, path: Path) -> State:
+    def load(cls, path: Path) -> "State":
         if not path.exists():
             return cls(path=path)
         raw = json.loads(path.read_text(encoding="utf-8"))

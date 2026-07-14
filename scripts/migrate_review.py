@@ -18,8 +18,6 @@ Three steps (each explained in the summary before the y/N confirm, default No):
      edit to those files; nothing else in them is touched.
 """
 
-from __future__ import annotations
-
 import re
 import shutil
 import sys
@@ -27,7 +25,9 @@ import uuid
 from datetime import date
 from pathlib import Path
 
-from bower_bird.config import Config, load_config
+from pydantic import ValidationError
+
+from bower_bird.config import Config
 from bower_bird.review import Review, ReviewStore
 
 _ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
@@ -147,7 +147,11 @@ def run_migration(config: Config) -> tuple[int, int, int]:
 
 
 def main() -> int:
-    config = load_config()
+    try:
+        config = Config()
+    except ValidationError as exc:
+        print(f"config error: {exc}", file=sys.stderr)
+        return 2
     print(f"peck migration — vault: {config.vault_path}\n")
     for line in build_summary(config):
         print(line)

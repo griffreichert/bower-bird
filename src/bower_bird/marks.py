@@ -28,8 +28,6 @@ the source note; Tier-2 grows highlights into nest concepts and routes
 dig/questions into the digest's gaps & next-reads.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass, field
 
@@ -82,38 +80,38 @@ class Marks:
         return not (self.highlights or self.dig or self.questions or self.further_links)
 
 
-def _unwrap_highlights(text: str) -> str:
+def unwrap_highlights(text: str) -> str:
     return _HIGHLIGHT.sub(r"\1", text)
 
 
-def _extract_highlights(body: str) -> list[str]:
+def extract_highlights(body: str) -> list[str]:
     return [h.strip() for h in _HIGHLIGHT.findall(body) if h.strip()]
 
 
-def _extract_dig(body: str) -> list[str]:
+def extract_dig(body: str) -> list[str]:
     """Lines tagged ``#dig`` — the line's text is the thread to pull on."""
     out: list[str] = []
     for raw in body.splitlines():
         if not _DIG.search(raw):
             continue
         cleaned = _DIG.sub("", raw)
-        cleaned = _unwrap_highlights(cleaned)
+        cleaned = unwrap_highlights(cleaned)
         cleaned = cleaned.lstrip("#>-*+ \t")
         cleaned = " ".join(cleaned.split())
         out.append(cleaned or "(this note)")
     return out
 
 
-def _clean_line(text: str) -> str:
+def clean_line(text: str) -> str:
     """Strip a directive tag's line down to its plain mention text."""
     cleaned = _PERSON.sub("", text)
-    cleaned = _unwrap_highlights(cleaned)
+    cleaned = unwrap_highlights(cleaned)
     cleaned = cleaned.replace("[[", "").replace("]]", "")
     cleaned = cleaned.lstrip("#>-*+ \t")
     return " ".join(cleaned.split())
 
 
-def _extract_person(body: str) -> list[str]:
+def extract_person(body: str) -> list[str]:
     """Mention text for each ``#person`` tag — the anchor Haiku resolves a name
     from. Inline (tag on the mention's line) uses that line; a tag alone on its
     own line reaches back to the nearest preceding non-empty line.
@@ -123,18 +121,18 @@ def _extract_person(body: str) -> list[str]:
     for i, raw in enumerate(lines):
         if not _PERSON.search(raw):
             continue
-        anchor = _clean_line(raw)
+        anchor = clean_line(raw)
         if not anchor:  # tag stands alone → use the mention above it
             j = i - 1
             while j >= 0 and not lines[j].strip():
                 j -= 1
-            anchor = _clean_line(lines[j]) if j >= 0 else ""
+            anchor = clean_line(lines[j]) if j >= 0 else ""
         if anchor:
             out.append(anchor)
     return out
 
 
-def _extract_questions(body: str) -> list[str]:
+def extract_questions(body: str) -> list[str]:
     """Blockquote lines starting ``> ?`` — my own questions, not article quotes.
 
     A ``> ?`` line opens a question; following plain ``>`` lines extend it; any
@@ -165,7 +163,7 @@ def _extract_questions(body: str) -> list[str]:
     return questions
 
 
-def _extract_links(body: str, self_url: str) -> list[tuple[str, str]]:
+def extract_links(body: str, self_url: str) -> list[tuple[str, str]]:
     """Outbound markdown links, de-duped, excluding the source's own URL."""
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
@@ -217,11 +215,11 @@ def pick_source_url(urls: list[str]) -> str:
 def extract_marks(body: str, self_url: str = "") -> Marks:
     """Pull every reader mark out of a clip body."""
     return Marks(
-        highlights=_extract_highlights(body),
-        dig=_extract_dig(body),
-        questions=_extract_questions(body),
-        further_links=_extract_links(body, self_url),
-        person_anchors=_extract_person(body),
+        highlights=extract_highlights(body),
+        dig=extract_dig(body),
+        questions=extract_questions(body),
+        further_links=extract_links(body, self_url),
+        person_anchors=extract_person(body),
         promote=bool(_PROMOTE.search(body)),
         frozen=bool(_FROZEN.search(body)) or bool(_PROMOTE.search(body)),
     )

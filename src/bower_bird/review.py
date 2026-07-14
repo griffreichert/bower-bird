@@ -21,8 +21,6 @@ tomorrow.
 ``peck`` is pull-only: it is never called from the cron pass.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import sys
@@ -120,7 +118,7 @@ class ReviewStore:
     # -- persistence ---------------------------------------------------------
 
     @classmethod
-    def load(cls, config: Config) -> ReviewStore:
+    def load(cls, config: Config) -> "ReviewStore":
         """Load from the vault, creating an empty store if the file doesn't exist."""
         path = config.review_path
         if not path.exists():
@@ -282,7 +280,7 @@ class ShelfCensus(BaseModel):
     retired: int = 0
 
     @classmethod
-    def from_store(cls, store: ReviewStore) -> ShelfCensus:
+    def from_store(cls, store: ReviewStore) -> "ShelfCensus":
         strangers = climbing = known = retired = 0
         for r in store._entries.values():
             if r.retired:
@@ -334,7 +332,7 @@ class SourceNode:
     linked_titles: list[str] = field(default_factory=list)
 
 
-def _parse_source_node(path: Path) -> SourceNode | None:
+def parse_source_node(path: Path) -> SourceNode | None:
     """Parse one sources/ note. None if it has no ``id:`` frontmatter."""
     text = path.read_text(encoding="utf-8")
     id_m = _ID_RE.search(text)
@@ -375,7 +373,7 @@ def scan_sources(config: Config) -> dict[str, SourceNode]:
     if not config.sources_dir.is_dir():
         return result
     for path in sorted(config.sources_dir.rglob("*.md")):
-        node = _parse_source_node(path)
+        node = parse_source_node(path)
         if node is not None:
             result[node.id] = node
     return result
@@ -400,13 +398,13 @@ _GRADE_ALIASES: dict[str, str] = {
 }
 
 
-def _prompt(msg: str) -> str:
+def prompt_user(msg: str) -> str:
     """Print ``msg`` and return stripped input. Raises EOFError on Ctrl-D."""
     print(msg, end="", flush=True)
     return input().strip()
 
 
-def _render_key_ideas(node: SourceNode) -> None:
+def render_key_ideas(node: SourceNode) -> None:
     """Teach surface: the node's key ideas (+ seed thought). No question."""
     print("  Key ideas:")
     if node.key_ideas:
@@ -419,7 +417,7 @@ def _render_key_ideas(node: SourceNode) -> None:
     print()
 
 
-def _generate_question(config: Config, node: SourceNode, box: int) -> str | None:
+def question_for_node(config: Config, node: SourceNode, box: int) -> str | None:
     """Generate a fresh, box-appropriate question. None if the LLM is unavailable.
 
     Mirrors the judge-unavailable fallback style: never crash a pull-only
@@ -429,14 +427,14 @@ def _generate_question(config: Config, node: SourceNode, box: int) -> str | None
 
     linked = node.linked_titles if box >= 4 else []
     try:
-        result = generate_question(node.key_ideas, node.seed, linked, box, config.model)
+        result = generate_question(node.key_ideas, node.seed, linked, box, config.llm)
     except Exception as exc:  # noqa: BLE001 — never abort the session
         print(f"  (question generator unavailable: {exc} — self-quiz below)\n")
         return None
     return result.question
 
 
-def _judge(
+def judge_review(
     config: Config,
     question: str,
     node: SourceNode,
@@ -455,7 +453,7 @@ def _judge(
     linked = node.linked_titles if box >= 4 else []
     try:
         verdict = judge_answer(
-            question, node.key_ideas, node.seed, answer, config.model, linked
+            question, node.key_ideas, node.seed, answer, config.llm, linked
         )
     except Exception as exc:  # noqa: BLE001
         print(f"  (judge unavailable: {exc} — grade manually)\n")
@@ -464,7 +462,7 @@ def _judge(
     return verdict.grade
 
 
-def _read_action(default: Grade | None) -> str | None:
+def read_action(default: Grade | None) -> str | None:
     """Prompt for a grading action; enter accepts ``default`` (the judge).
 
     Returns "strong" | "weak" | "wrong" | "bad" | "retire", or None on EOF.
@@ -475,7 +473,7 @@ def _read_action(default: Grade | None) -> str | None:
         hint = "  Grade (s=strong / w=weak / x=wrong, b=bad q, d=retire): "
     while True:
         try:
-            raw = _prompt(hint).lower()
+            raw = prompt_user(hint).lower()
         except EOFError:
             return None
         if raw == "" and default is not None:
@@ -488,8 +486,8 @@ def _read_action(default: Grade | None) -> str | None:
 
 # Kept for the test suite's existing entry point (accepts only s/w/x, no
 # default when a grade default isn't given).
-def _read_grade(default: Grade | None) -> Grade | None:
-    action = _read_action(default)
+def read_grade(default: Grade | None) -> Grade | None:
+    action = read_action(default)
     if action in ("strong", "weak", "wrong"):
         return action  # type: ignore[return-value]
     return None
@@ -534,22 +532,22 @@ def peck(config: Config) -> int:
         print(f"{'─' * 60}")
 
         if not review.reviews:  # teach-first
-            _render_key_ideas(node)
+            render_key_ideas(node)
             updated = store.teach(review.id)
             store.save()
             print(f"  → teach card; due {updated.due}\n")
             continue
 
-        question = _generate_question(config, node, review.box)
+        question = question_for_node(config, node, review.box)
         if question is None:
-            _render_key_ideas(node)
+            render_key_ideas(node)
             try:
-                answer = _prompt("  Self-quiz — your answer (grade yourself): ")
+                answer = prompt_user("  Self-quiz — your answer (grade yourself): ")
             except EOFError:
                 print("\npeck: session ended early.")
                 store.save()
                 return reviewed
-            action = _read_action(None)
+            action = read_action(None)
             if action is None:
                 print("\npeck: session ended early.")
                 store.save()
@@ -557,7 +555,7 @@ def peck(config: Config) -> int:
         else:
             print(f"\n  Q: {question}\n")
             try:
-                answer = _prompt("  Your answer: ")
+                answer = prompt_user("  Your answer: ")
             except EOFError:
                 print("\npeck: session ended early.")
                 store.save()
@@ -569,11 +567,11 @@ def peck(config: Config) -> int:
                 store.save()
                 reviewed += 1
                 print(f"  → wrong (blank/idk), next due {updated.due}\n")
-                _render_key_ideas(node)
+                render_key_ideas(node)
                 continue
 
-            default = _judge(config, question, node, review.box, answer)
-            action = _read_action(default)
+            default = judge_review(config, question, node, review.box, answer)
+            action = read_action(default)
             if action is None:
                 print("\npeck: session ended early.")
                 store.save()
@@ -599,7 +597,7 @@ def peck(config: Config) -> int:
         reviewed += 1
         print(f"  → box {updated.box}, next due {updated.due}\n")
         if grade == "wrong":
-            _render_key_ideas(node)
+            render_key_ideas(node)
 
     print(f"peck: reviewed {reviewed} node(s).")
     print(ShelfCensus.from_store(store).render())
@@ -734,11 +732,11 @@ def main(config: Config, argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     # Allow running directly: `uv run python -m bower_bird.review`
-    from bower_bird.config import load_config
+    from pydantic import ValidationError
 
     try:
-        _cfg = load_config()
-    except RuntimeError as exc:
+        _cfg = Config()
+    except ValidationError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         sys.exit(2)
     sys.exit(main(_cfg))

@@ -1,8 +1,8 @@
 """Configuration: environment + vault paths + model.
 
-Loaded once at startup. ANTHROPIC_API_KEY is loaded from .env and exported to
-the process environment for the Anthropic SDK — launchd jobs don't inherit
-shell exports (see load_config).
+Loaded once at startup via `Config()`. ANTHROPIC_API_KEY is loaded from .env
+and exported to the process environment for the Anthropic SDK — launchd jobs
+don't inherit shell exports (see model_post_init).
 
 The vault is *not* part of this repo. It lives in iCloud. bower-bird owns one
 folder there, `BowerBird/`, and writes nowhere else (per INVARIANTS). That
@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -28,26 +28,32 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OWNED_FOLDER = "BowerBird"
 
 
-def _default_vault_path() -> Path | None:
-    """Resolve bower-bird's owned folder from the `notes/` symlink, if present.
+class LLMSettings(BaseModel):
+    """LLM tunables: model names + per-call max-token caps.
 
-    notes/ -> .../G/g/projects/bower-bird, so the Obsidian root (.../G) is
-    parents[2] of the resolved target, and the owned folder is `<root>/BowerBird`.
+    Design, not deployment — not env-configurable. Two-model pipeline: `model`
+    (link identification) is cheap Haiku. `build_model` (synthesize_clipping:
+    linking + placement + extraction) runs on Sonnet — the linking quality is
+    what makes the graph worth reading, and build is manual so the cost is
+    triggered deliberately.
+
+    Haiku 4.5 does not take `thinking`/`effort` params — omit them. Small caps:
+    these are one-liners and short JSON, not essays.
     """
-    link = REPO_ROOT / "notes"
-    try:
-        target = link.resolve(strict=True)
-    except (OSError, RuntimeError):
-        return None
-    if len(target.parents) >= 3:
-        return target.parents[2] / OWNED_FOLDER
-    return None
+
+    model: str = "claude-haiku-4-5"
+    build_model: str = "claude-sonnet-5"
+    describe_max_tokens: int = 120
+    clipping_max_tokens: int = 1200
+    judge_max_tokens: int = 300
+    question_max_tokens: int = 200
 
 
 class Config(BaseSettings):
     """Runtime config — secrets/paths/tunables from the environment (or .env).
 
-    ANTHROPIC_API_KEY rides along from .env for launchd runs (see load_config).
+    ANTHROPIC_API_KEY rides along from .env for launchd runs (see
+    model_post_init).
     """
 
     model_config = SettingsConfigDict(
@@ -57,18 +63,14 @@ class Config(BaseSettings):
         populate_by_name=True,
     )
 
-    # Two-model pipeline, declared in-package (NOT env-configurable — it's design,
-    # not deployment). `pull` (link identification) is cheap Haiku. `build`
-    # (synthesize_clipping: linking + placement + extraction) runs on Sonnet —
-    # the linking quality is what makes the graph worth reading, and build is
-    # manual so the cost is triggered deliberately.
-    model: ClassVar[str] = "claude-haiku-4-5"
-    build_model: ClassVar[str] = "claude-sonnet-5"
+    # LLM tunables (model names, max-token caps) — design, not deployment;
+    # not env-configurable. See LLMSettings.
+    llm: ClassVar[LLMSettings] = LLMSettings()
 
     telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
     # The Anthropic SDK reads ANTHROPIC_API_KEY from the process environment —
     # which a launchd job does NOT inherit from the shell. Load it from .env
-    # here and export it in load_config so cron runs authenticate too.
+    # here and export it in model_post_init so cron runs authenticate too.
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     # Comma/space-separated Telegram chat_ids allowed to drive the bot. A
     # Telegram bot is publicly addressable by @handle, so an empty allowlist
@@ -94,7 +96,19 @@ class Config(BaseSettings):
     @field_validator("vault_path", mode="before")
     @classmethod
     def _resolve_vault(cls, v: Path | str | None) -> Path:
-        vault = Path(v).expanduser() if v else _default_vault_path()
+        vault = Path(v).expanduser() if v else None
+        if vault is None:
+            # Resolve bower-bird's owned folder from the `notes/` symlink:
+            # notes/ -> .../G/g/projects/bower-bird, so the Obsidian root
+            # (.../G) is parents[2] of the resolved target, and the owned
+            # folder is `<root>/BowerBird`.
+            link = REPO_ROOT / "notes"
+            try:
+                target = link.resolve(strict=True)
+            except (OSError, RuntimeError):
+                target = None
+            if target is not None and len(target.parents) >= 3:
+                vault = target.parents[2] / OWNED_FOLDER
         if vault is None:
             raise ValueError(
                 "Could not resolve the vault path. Set BOWER_VAULT_PATH, or "
@@ -220,19 +234,9 @@ class Config(BaseSettings):
         """
         return self.vault_path / "_review.json"
 
-
-def load_config() -> Config:
-    """Load config from the environment / .env. Raises RuntimeError with a
-    readable message on a missing token or unresolvable vault path.
-
-    Also exports ANTHROPIC_API_KEY from .env into the process environment when
-    it isn't already there — launchd jobs don't inherit the shell's exports,
-    and the Anthropic SDK only looks in the environment.
-    """
-    try:
-        config = Config()
-    except ValidationError as exc:
-        raise RuntimeError(str(exc)) from exc
-    if config.anthropic_api_key:
-        os.environ.setdefault("ANTHROPIC_API_KEY", config.anthropic_api_key)
-    return config
+    def model_post_init(self, __context: object) -> None:
+        """Export ANTHROPIC_API_KEY into the process environment when it isn't
+        already there — launchd jobs don't inherit the shell's exports, and
+        the Anthropic SDK only looks in the environment."""
+        if self.anthropic_api_key:
+            os.environ.setdefault("ANTHROPIC_API_KEY", self.anthropic_api_key)

@@ -1,13 +1,13 @@
 """Vault writes — the only side effects that touch the vault.
 
 Hard boundary (per INVARIANTS): bower-bird owns the `BowerBird/` folder
-(`config.vault_path`) and writes *nowhere else*. `_assert_writable` enforces
+(`config.vault_path`) and writes *nowhere else*. `assert_writable` enforces
 that in code so a future change can't quietly break it.
 
 Additive-autonomous: bower-bird creates its own notes (sources/, new concept
 notes in brain/bowers/) and asserts `[[links]]` freely, but it **never rewrites
 or deletes an existing note**. Every write here is either a brand-new file or a
-strictly additive append (`_append_link`) — so nothing a human authored is ever
+strictly additive append (`append_link`) — so nothing a human authored is ever
 clobbered.
 """
 
@@ -28,7 +28,7 @@ _LINKS_HEADING = "## Links"  # concept↔concept relations (sibling ideas)
 _SOURCES_HEADING = "## Sources"  # source/leaf backlinks — click to read origin
 
 
-def _assert_writable(config: Config, path: Path) -> None:
+def assert_writable(config: Config, path: Path) -> None:
     """Refuse any write outside the owned `BowerBird/` folder."""
     resolved = path.resolve()
     root = config.vault_path.resolve()
@@ -39,7 +39,7 @@ def _assert_writable(config: Config, path: Path) -> None:
         )
 
 
-def _yaml_scalar(value: str) -> str:
+def yaml_scalar(value: str) -> str:
     """Sanitize a string for a double-quoted YAML scalar in frontmatter.
 
     Page metadata and model output are attacker-influenceable (a hostile page's
@@ -49,13 +49,13 @@ def _yaml_scalar(value: str) -> str:
     return " ".join(value.split()).replace('"', "'")
 
 
-def _safe_filename(title: str) -> str:
+def safe_filename(title: str) -> str:
     cleaned = _INVALID_FILENAME.sub("-", title).strip().strip(".")
     cleaned = re.sub(r"\s+", " ", cleaned)
     return (cleaned or "untitled")[:120]
 
 
-def _today() -> str:
+def today_iso() -> str:
     return datetime.now().date().isoformat()
 
 
@@ -67,7 +67,7 @@ def find_concept_path(config: Config, title: str) -> Path:
     flat duplicate. Otherwise return the flat path at the bowers root, where new,
     unfiled concepts land until Tier-2 files them into a bower.
     """
-    safe = _safe_filename(title)
+    safe = safe_filename(title)
     if config.notes_dir.is_dir():
         for path in config.notes_dir.rglob(f"{safe}.md"):
             return path
@@ -86,7 +86,7 @@ tags:
 """
 
 
-def _append_link(
+def append_link(
     config: Config, path: Path, target_title: str, heading: str = _LINKS_HEADING
 ) -> None:
     """Append `- [[target]]` under `heading`. Strictly additive: never edits
@@ -97,12 +97,12 @@ def _append_link(
     `heading` divides the two kinds of link a node carries: `## Links` for
     sibling concepts, `## Sources` for the source/leaf notes you click to read
     the origin. A given target is placed once, in the heading passed here."""
-    _assert_writable(config, path)
+    assert_writable(config, path)
     line = f"- [[{target_title}]]"
     if path.exists():
         text = path.read_text(encoding="utf-8")
     else:
-        text = _CONCEPT_STUB.format(title=path.stem, today=_today())
+        text = _CONCEPT_STUB.format(title=path.stem, today=today_iso())
 
     if line in text:
         return
@@ -174,7 +174,7 @@ def upsert_index_line(
     existing line untouched — used for concept stubs at capture, so a thin
     capture-time line never clobbers a richer one weave has already written."""
     path = config.index_path
-    _assert_writable(config, path)
+    assert_writable(config, path)
     line = f"- [[{title}]] · {category} · {oneline}".rstrip(" ·")
 
     text = path.read_text(encoding="utf-8") if path.exists() else _INDEX_HEADER
@@ -197,7 +197,7 @@ def upsert_index_line(
 def append_log(config: Config, message: str) -> None:
     """Append a timestamped line to `_log.md`. Seeds the header on first write."""
     path = config.log_path
-    _assert_writable(config, path)
+    assert_writable(config, path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         path.write_text(_LOG_HEADER, encoding="utf-8")
@@ -231,11 +231,11 @@ it'll be read + filed on the next pass. Check one off once you've clipped it.
 def append_to_clip_queue(config: Config, url: str, title: str = "") -> bool:
     """Append a `- [ ]` clip-me entry. Returns False if the URL is already listed."""
     path = config.to_clip_path
-    _assert_writable(config, path)
+    assert_writable(config, path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if not path.exists():
-        path.write_text(_TO_CLIP_HEADER.format(today=_today()), encoding="utf-8")
+        path.write_text(_TO_CLIP_HEADER.format(today=today_iso()), encoding="utf-8")
 
     existing = path.read_text(encoding="utf-8")
     if url in existing:
@@ -279,11 +279,11 @@ def append_to_tools(
     search hits their phrasing, not just the scraped title.
     """
     path = config.tools_path
-    _assert_writable(config, path)
+    assert_writable(config, path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if not path.exists():
-        path.write_text(_TOOLS_HEADER.format(today=_today()), encoding="utf-8")
+        path.write_text(_TOOLS_HEADER.format(today=today_iso()), encoding="utf-8")
 
     existing = path.read_text(encoding="utf-8")
     if url in existing:
@@ -330,9 +330,9 @@ def write_inbox_doc(config: Config, meta: PageMeta, body: str) -> Path | None:
     The doc is NOT a summary — it is the full fetched text rendered for reading.
     """
     config.inbox_dir.mkdir(parents=True, exist_ok=True)
-    safe = _safe_filename(meta.title)
+    safe = safe_filename(meta.title)
     path = config.inbox_dir / f"{safe}.md"
-    _assert_writable(config, path)
+    assert_writable(config, path)
 
     if path.exists():
         return None
@@ -343,9 +343,9 @@ def write_inbox_doc(config: Config, meta: PageMeta, body: str) -> Path | None:
         else "_Unable to extract body text — open in browser to read._"
     )
     content = _INBOX_DOC_TEMPLATE.format(
-        title=_yaml_scalar(meta.title),
-        url=_yaml_scalar(meta.url),
-        today=_today(),
+        title=yaml_scalar(meta.title),
+        url=yaml_scalar(meta.url),
+        today=today_iso(),
         body=body_block,
     )
     path.write_text(content, encoding="utf-8")
@@ -377,7 +377,7 @@ tags:
 """
 
 
-def _tweet_body(tweet: TweetText) -> str:
+def format_tweet_body(tweet: TweetText) -> str:
     lines = []
     if tweet.in_reply_to:
         hint = f"*↳ reply to @{tweet.in_reply_to} — open the link for the thread*"
@@ -401,23 +401,23 @@ def write_tweet_doc(config: Config, tweet: TweetText) -> Path | None:
     config.tweets_dir.mkdir(parents=True, exist_ok=True)
     snippet = " ".join(tweet.text.split())[:60].strip() or tweet.id
     title = f"@{tweet.author_handle} — {snippet}"
-    path = config.tweets_dir / f"{_safe_filename(title)}.md"
-    _assert_writable(config, path)
+    path = config.tweets_dir / f"{safe_filename(title)}.md"
+    assert_writable(config, path)
     if path.exists():
         if tweet.url in path.read_text(encoding="utf-8"):
             return None  # same tweet, already rendered
         # Same author + same opening words, different tweet — disambiguate.
-        path = config.tweets_dir / f"{_safe_filename(f'{title} {tweet.id}')}.md"
+        path = config.tweets_dir / f"{safe_filename(f'{title} {tweet.id}')}.md"
         if path.exists():
             return None
 
     path.write_text(
         _TWEET_DOC_TEMPLATE.format(
-            title=_yaml_scalar(title),
-            url=_yaml_scalar(tweet.url),
-            author=_yaml_scalar(tweet.author_name),
-            today=_today(),
-            body=_tweet_body(tweet),
+            title=yaml_scalar(title),
+            url=yaml_scalar(tweet.url),
+            author=yaml_scalar(tweet.author_name),
+            today=today_iso(),
+            body=format_tweet_body(tweet),
         ),
         encoding="utf-8",
     )
@@ -453,11 +453,13 @@ Nothing is dropped — triage these by hand.
 def append_to_telegram_inbox(config: Config, text: str, reason: str) -> None:
     """Park an unprocessable Telegram message with a timestamp + reason."""
     path = config.telegram_inbox_path
-    _assert_writable(config, path)
+    assert_writable(config, path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if not path.exists():
-        path.write_text(_TELEGRAM_INBOX_HEADER.format(today=_today()), encoding="utf-8")
+        path.write_text(
+            _TELEGRAM_INBOX_HEADER.format(today=today_iso()), encoding="utf-8"
+        )
 
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     flat = " ".join(text.split())
@@ -485,7 +487,7 @@ tags:
 """
 
 
-def _source_tags(marks: Marks) -> str:
+def build_source_tags(marks: Marks) -> str:
     """`source`, plus `dig` when the reader flagged something to go deeper on,
     plus `frozen` when the reader pinned the node (`#frozen`/`#promote`) — prose
     immutable, links stay open."""
@@ -521,9 +523,9 @@ def create_source_note(
     # Prefer the model's fluff-free title for the graph node; fall back to the
     # raw page title if the model gave nothing.
     display_title = (plan.concise_title or meta.title).strip() or meta.title
-    source_title = _safe_filename(display_title)
+    source_title = safe_filename(display_title)
     path = config.sources_dir / f"{source_title}.md"
-    _assert_writable(config, path)
+    assert_writable(config, path)
     if path.exists():
         return None
 
@@ -535,7 +537,7 @@ def create_source_note(
         else "- _(no connections yet)_"
     )
 
-    author = _yaml_scalar(meta.author or plan.author)
+    author = yaml_scalar(meta.author or plan.author)
     author_line = f'author: "{author}"\n' if author else ""
 
     # Every source is a peck card (antilibrary model, #18) — mint a stable id
@@ -545,13 +547,13 @@ def create_source_note(
 
     parts = [
         _SOURCE_FRONTMATTER.format(
-            title=_yaml_scalar(display_title),
+            title=yaml_scalar(display_title),
             source_id=source_id,
-            url=_yaml_scalar(meta.url),
-            today=_today(),
-            description=_yaml_scalar(plan.description),
+            url=yaml_scalar(meta.url),
+            today=today_iso(),
+            description=yaml_scalar(plan.description),
             author_line=author_line,
-            tags=_source_tags(marks),
+            tags=build_source_tags(marks),
         ),
         f"## Links\n{backlinks}\n",
     ]
@@ -583,7 +585,7 @@ def create_source_note(
     # root for Tier-2 to file. This source lands under the concept's `## Sources`
     # (click-to-read-origin), kept apart from its sibling-concept `## Links`.
     for target in targets:
-        _append_link(
+        append_link(
             config, find_concept_path(config, target), source_title, _SOURCES_HEADING
         )
 
@@ -617,20 +619,20 @@ def create_leaf_note(
 
     A leaf links into the concept graph like a source does, but is NEVER minted
     as a bower and NEVER seeded into the review store — it carries no Feynman
-    payload and is not quizzed. Additive: a brand-new file, or `_append_link`
+    payload and is not quizzed. Additive: a brand-new file, or `append_link`
     appends to an existing one. `kind` is the tag + folder ('person' | 'tool').
     """
     folder = config.people_dir if kind == "person" else config.tools_dir
     folder.mkdir(parents=True, exist_ok=True)
-    safe = _safe_filename(entity.name)
+    safe = safe_filename(entity.name)
     path = folder / f"{safe}.md"
-    _assert_writable(config, path)
+    assert_writable(config, path)
 
     if not path.exists():
         body = _LEAF_FRONTMATTER.format(
-            title=_yaml_scalar(entity.name),
-            url=_yaml_scalar(entity.url),
-            today=_today(),
+            title=yaml_scalar(entity.name),
+            url=yaml_scalar(entity.url),
+            today=today_iso(),
             kind=kind,
         )
         if entity.note.strip():
@@ -641,9 +643,9 @@ def create_leaf_note(
     # The leaf lists its concepts under `## Links`; on the concept + source it is
     # itself a reference node, so it lands under their `## Sources`.
     for topic in entity.topics:
-        _append_link(config, path, topic)
-        _append_link(config, find_concept_path(config, topic), safe, _SOURCES_HEADING)
-    _append_link(config, path, source_title, _SOURCES_HEADING)
+        append_link(config, path, topic)
+        append_link(config, find_concept_path(config, topic), safe, _SOURCES_HEADING)
+    append_link(config, path, source_title, _SOURCES_HEADING)
     return path
 
 
@@ -653,7 +655,7 @@ def file_entities(config: Config, plan: ClippingPlan, source_title: str) -> list
     Returns short ids like 'tool:roboflow-supervision' for the run log.
     """
     filed: list[str] = []
-    source_path = config.sources_dir / f"{_safe_filename(source_title)}.md"
+    source_path = config.sources_dir / f"{safe_filename(source_title)}.md"
     for kind, entities in (("tool", plan.tools), ("person", plan.people)):
         for entity in entities:
             if not entity.name.strip():
@@ -662,7 +664,7 @@ def file_entities(config: Config, plan: ClippingPlan, source_title: str) -> list
             # Surface the leaf on the source note under `## Sources` (a reference
             # node, not a sibling concept). Additive, idempotent.
             if source_path.exists():
-                _append_link(config, source_path, leaf.stem, _SOURCES_HEADING)
+                append_link(config, source_path, leaf.stem, _SOURCES_HEADING)
             filed.append(f"{kind}:{leaf.stem}")
     return filed
 
@@ -703,13 +705,13 @@ _CONCEPT_SECTION = """\
 <!-- /bower:concept -->"""
 
 
-def _extract_bower_id(text: str) -> str | None:
+def extract_bower_id(text: str) -> str | None:
     """Pull the `id:` value from existing frontmatter, or None if absent."""
     m = _ID_RE.search(text)
     return m.group(1).strip() if m else None
 
 
-def _inject_id_into_frontmatter(text: str, bower_id: str) -> str:
+def inject_id_into_frontmatter(text: str, bower_id: str) -> str:
     """Append `id: <bower_id>` as the first line inside the frontmatter block.
 
     Called only when the file exists but has no `id:` yet (append-once).
@@ -722,7 +724,7 @@ def _inject_id_into_frontmatter(text: str, bower_id: str) -> str:
     return text[: first_newline + 1] + f"id: {bower_id}\n" + text[first_newline + 1 :]
 
 
-def _write_concept_section(text: str, concept: FeynmanConcept) -> str:
+def write_concept_section(text: str, concept: FeynmanConcept) -> str:
     """Replace the machine-managed concept block, or append it if absent.
 
     Human-authored prose outside the <!-- bower:concept --> sentinel is
@@ -758,32 +760,32 @@ def mint_bower(
     Returns ``(path, bower_id)`` — the note path and its stable id.
     """
     path = find_concept_path(config, concept.handle)
-    _assert_writable(config, path)
+    assert_writable(config, path)
 
     if path.exists():
         text = path.read_text(encoding="utf-8")
-        bower_id = _extract_bower_id(text)
+        bower_id = extract_bower_id(text)
         if bower_id is None:
             # Existing note has no id yet — inject one (append-once).
             bower_id = str(uuid.uuid4())
-            text = _inject_id_into_frontmatter(text, bower_id)
+            text = inject_id_into_frontmatter(text, bower_id)
         # Update the machine-managed concept block; leave everything else alone.
-        text = _write_concept_section(text, concept)
+        text = write_concept_section(text, concept)
     else:
         bower_id = str(uuid.uuid4())
         text = _BOWER_FRONTMATTER.format(
-            title=_yaml_scalar(concept.handle),
+            title=yaml_scalar(concept.handle),
             bower_id=bower_id,
-            today=_today(),
+            today=today_iso(),
         )
-        text = _write_concept_section(text, concept)
+        text = write_concept_section(text, concept)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
     # Assert the backlink from this bower to its source under `## Sources`
     # (click-to-read-origin), kept apart from sibling-concept `## Links`.
-    _append_link(config, path, source_title, _SOURCES_HEADING)
+    append_link(config, path, source_title, _SOURCES_HEADING)
 
     # Seed the review store for newly minted bowers (idempotent — existing
     # entries are left untouched). Persisted immediately so the vault file
