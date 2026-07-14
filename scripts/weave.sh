@@ -13,7 +13,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 VAULT="$(cd "$REPO_ROOT" && uv run python -c \
-  'from bower_bird.config import load_config; print(load_config().vault_path)' \
+  'from bower_bird.config import Config; print(Config().vault_path)' \
   | tail -1)"
 
 if [ ! -d "$VAULT" ]; then

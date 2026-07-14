@@ -35,7 +35,7 @@ inside note bodies.
 not the repo):
 
 ```bash
-uv run python -c 'from bower_bird.config import load_config; print(load_config().vault_path)' | tail -1
+uv run python -c 'from bower_bird.config import Config; print(Config().vault_path)' | tail -1
 ```
 
 All paths below (`brain/`, `_topic_index.md`, …) are relative to that. Topic =

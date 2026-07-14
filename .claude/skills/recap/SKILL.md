@@ -25,7 +25,7 @@ wants the recap made permanent or connections asserted, point them at `weave`.
 not the repo):
 
 ```bash
-uv run python -c 'from bower_bird.config import load_config; print(load_config().vault_path)' | tail -1
+uv run python -c 'from bower_bird.config import Config; print(Config().vault_path)' | tail -1
 ```
 
 All paths below are relative to that.

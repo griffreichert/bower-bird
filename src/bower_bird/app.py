@@ -12,7 +12,7 @@ import sys
 import time
 
 from bower_bird import inbox, ingest, telegram
-from bower_bird.config import Config, load_config
+from bower_bird.config import Config
 from bower_bird.fetch import (
     PageMeta,
     fetch,
@@ -27,13 +27,13 @@ from bower_bird.router import Lane, parse
 from bower_bird.state import State
 
 
-def _short(title: str, limit: int = 60) -> str:
+def truncate_title(title: str, limit: int = 60) -> str:
     """Squash whitespace and cap a page title for a phone-width receipt."""
     title = " ".join(title.split())
     return title if len(title) <= limit else title[: limit - 1].rstrip() + "…"
 
 
-def _handle(config: Config, state: State, text: str) -> str:
+def handle_update(config: Config, state: State, text: str) -> str:
     parsed = parse(text)
 
     if parsed.lane is Lane.NO_LINK:
@@ -50,14 +50,14 @@ def _handle(config: Config, state: State, text: str) -> str:
     if parsed.lane is Lane.TOOL:
         # A keep-for-later shelf item. Repos/tool pages fetch fine over httpx.
         meta = fetch(url, timeout=config.fetch_timeout)
-        oneline = describe_link(meta, model=config.model)
+        oneline = describe_link(meta, config.llm)
         added = ingest.append_to_tools(
             config, url, meta.title, oneline, note=parsed.note
         )
         state.mark_url(url)
         if not added:
-            return f"🔁 Already in tools — {_short(meta.title)}"
-        return f"🔧 tools — {_short(meta.title)}"
+            return f"🔁 Already in tools — {truncate_title(meta.title)}"
+        return f"🔧 tools — {truncate_title(meta.title)}"
 
     # A sent PDF counts as read (INVARIANTS, 2026-07-11): skip the to-read
     # inbox and fall through to the learned lane below.
@@ -91,8 +91,8 @@ def _handle(config: Config, state: State, text: str) -> str:
         path = ingest.write_inbox_doc(config, meta, body)
         state.mark_url(url)
         if path is None:
-            return f"🔁 Already in inbox — {_short(meta.title)}"
-        return f"📥 inbox — {_short(meta.title)}"
+            return f"🔁 Already in inbox — {truncate_title(meta.title)}"
+        return f"📥 inbox — {truncate_title(meta.title)}"
 
     # Lane.LEARNED — the user has read it and added a note (`read:` / link+note).
     # A tweet read on X itself skips the digest queue: resolve its text and file
@@ -123,11 +123,11 @@ def _handle(config: Config, state: State, text: str) -> str:
     else:
         meta = fetch(url, timeout=config.fetch_timeout)
     candidates = ingest.read_index(config)
-    plan = synthesize_clipping(meta, parsed.note, candidates, model=config.build_model)
+    plan = synthesize_clipping(meta, parsed.note, candidates, config.llm)
     path = ingest.create_source_note(config, meta, plan, note=parsed.note)
     state.mark_url(url)
     if path is None:
-        return f"🔁 Already in brain — {_short(plan.concise_title)}"
+        return f"🔁 Already in brain — {truncate_title(plan.concise_title)}"
 
     # File named tool/person entities as their own leaf nodes (same as the clip lane).
     ingest.file_entities(config, plan, path.stem)
@@ -141,19 +141,19 @@ def _handle(config: Config, state: State, text: str) -> str:
     )
 
     links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
-    return f"🧠 brain — {_short(plan.concise_title)}\nLinked: {links}"
+    return f"🧠 brain — {truncate_title(plan.concise_title)}\nLinked: {links}"
 
 
 def run_telegram(config: Config | None = None) -> int:
     """Pull the Telegram queue once (links → inbox/). Returns items processed."""
-    config = config or load_config()
+    config = config or Config()
     state = State.load(config.state_path)
-    return _pull_telegram(config, state)
+    return pull_telegram(config, state)
 
 
 def run_gather(config: Config | None = None) -> int:
     """Gather read+annotated trinkets/ → brain/bowers/. Returns items processed."""
-    config = config or load_config()
+    config = config or Config()
     state = State.load(config.state_path)
     clip_log = inbox.process_inbox(config, state)
     for line in clip_log:
@@ -163,7 +163,7 @@ def run_gather(config: Config | None = None) -> int:
 
 def run_all(config: Config | None = None) -> int:
     """One full pass: Telegram queue + trinkets gather + inbox decay."""
-    config = config or load_config()
+    config = config or Config()
     count = run_telegram(config) + run_gather(config)
     from bower_bird.prune import let_go
 
@@ -180,7 +180,7 @@ def run_drain(config: Config | None = None) -> int:
     and resolution failures are left untouched (still yours to clip). Edits
     to-clip.md in place — a bot-owned file whose whole contract is checkboxes.
     """
-    config = config or load_config()
+    config = config or Config()
     path = config.to_clip_path
     if not path.exists():
         print("bb drain: no to-clip.md — nothing to do.")
@@ -212,7 +212,7 @@ def run_drain(config: Config | None = None) -> int:
     return drained
 
 
-def _pull_telegram(config: Config, state: State) -> int:
+def pull_telegram(config: Config, state: State) -> int:
     updates = telegram.get_updates(
         config.telegram_bot_token,
         offset=state.telegram_offset,
@@ -238,7 +238,7 @@ def _pull_telegram(config: Config, state: State) -> int:
             continue
 
         try:
-            receipt = _handle(config, state, update.text)
+            receipt = handle_update(config, state, update.text)
         except OSError as exc:
             # Transient filesystem error — iCloud raises EDEADLK (errno 11 on
             # macOS) reading a dataless file it hasn't materialized yet. Don't

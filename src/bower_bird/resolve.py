@@ -9,15 +9,13 @@ embed tweets on third-party pages) as fallback. Both verified working
 back to the clip queue as before.
 """
 
-from __future__ import annotations
-
 import math
 import re
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict
 
-from bower_bird.fetch import _safe_get
+from bower_bird.fetch import safe_get
 
 _TWEET_HOSTS = {
     "x.com",
@@ -60,7 +58,7 @@ def parse_tweet_id(url: str) -> str | None:
     return match.group(2)
 
 
-def _base36(n: int) -> str:
+def base36(n: int) -> str:
     if n == 0:
         return "0"
     out = ""
@@ -70,7 +68,7 @@ def _base36(n: int) -> str:
     return out
 
 
-def _syndication_token(tweet_id: str) -> str:
+def syndication_token(tweet_id: str) -> str:
     """Compute the token Twitter's syndication CDN requires: base36((id/1e15)*pi),
     integer + ~12 fractional digits, with all '0' chars and the '.' stripped.
     """
@@ -83,15 +81,15 @@ def _syndication_token(tweet_id: str) -> str:
         digit = int(frac)
         frac_digits += _BASE36_DIGITS[digit]
         frac -= digit
-    token = f"{_base36(whole)}.{frac_digits}"
+    token = f"{base36(whole)}.{frac_digits}"
     return token.replace("0", "").replace(".", "")
 
 
-def _canonical_url(handle: str, tweet_id: str) -> str:
+def canonical_url(handle: str, tweet_id: str) -> str:
     return f"https://x.com/{handle}/status/{tweet_id}"
 
 
-def _from_fxtwitter(data: dict) -> TweetText | None:
+def from_fxtwitter(data: dict) -> TweetText | None:
     if data.get("code") != 200:
         return None
     tweet = data.get("tweet")
@@ -102,7 +100,7 @@ def _from_fxtwitter(data: dict) -> TweetText | None:
     quote = tweet.get("quote")
     return TweetText(
         id=str(tweet["id"]),
-        url=_canonical_url(handle, str(tweet["id"])),
+        url=canonical_url(handle, str(tweet["id"])),
         author_handle=handle,
         author_name=author.get("name", ""),
         text=tweet["text"],
@@ -112,7 +110,7 @@ def _from_fxtwitter(data: dict) -> TweetText | None:
     )
 
 
-def _from_syndication(data: dict) -> TweetText | None:
+def from_syndication(data: dict) -> TweetText | None:
     if not data.get("text") or not data.get("id_str"):
         return None
     user = data.get("user") or {}
@@ -120,7 +118,7 @@ def _from_syndication(data: dict) -> TweetText | None:
     quoted = data.get("quoted_tweet") or {}
     return TweetText(
         id=data["id_str"],
-        url=_canonical_url(handle, data["id_str"]),
+        url=canonical_url(handle, data["id_str"]),
         author_handle=handle,
         author_name=user.get("name", ""),
         text=data["text"],
@@ -142,22 +140,22 @@ def resolve_tweet(url: str, timeout: float) -> TweetText | None:
         return None
 
     try:
-        resp = _safe_get(f"https://api.fxtwitter.com/status/{tweet_id}", timeout)
+        resp = safe_get(f"https://api.fxtwitter.com/status/{tweet_id}", timeout)
         if resp.status_code == 200:
-            result = _from_fxtwitter(resp.json())
+            result = from_fxtwitter(resp.json())
             if result is not None:
                 return result
     except Exception:
         pass
 
     try:
-        token = _syndication_token(tweet_id)
-        resp = _safe_get(
+        token = syndication_token(tweet_id)
+        resp = safe_get(
             f"https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&token={token}",
             timeout,
         )
         if resp.status_code == 200:
-            result = _from_syndication(resp.json())
+            result = from_syndication(resp.json())
             if result is not None:
                 return result
     except Exception:

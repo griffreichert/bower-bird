@@ -1,5 +1,5 @@
 """PDF lane tests — url detection, text extraction, and the read-assumption
-routing (bare PDF link → learned lane → brain). No network: _safe_get and the
+routing (bare PDF link → learned lane → brain). No network: safe_get and the
 LLM calls are stubbed; extraction runs on a real handcrafted PDF.
 
 Run: uv run python tests/test_pdf.py
@@ -89,12 +89,12 @@ def test_is_pdf_url() -> None:
 
 
 def test_fetch_pdf_extracts_text() -> None:
-    orig = fetch_mod._safe_get
-    fetch_mod._safe_get = lambda url, timeout: _FakeResponse(_tiny_pdf("Hello bower"))
+    orig = fetch_mod.safe_get
+    fetch_mod.safe_get = lambda url, timeout: _FakeResponse(_tiny_pdf("Hello bower"))
     try:
         meta = fetch_mod.fetch_pdf("https://example.com/paper.pdf", timeout=1)
     finally:
-        fetch_mod._safe_get = orig
+        fetch_mod.safe_get = orig
     check("Hello bower" in meta.body_excerpt, "extracted text lands in body_excerpt")
     check(meta.title == "Hello bower", "first text line becomes the title")
 
@@ -117,7 +117,7 @@ def test_bare_pdf_link_routes_to_brain() -> None:
                 root.mkdir(parents=True)
                 cfg = _config(root)
                 state = State(path=root / "state.json")
-                return app._handle(cfg, state, "https://example.com/paper.pdf")
+                return app.handle_update(cfg, state, "https://example.com/paper.pdf")
         finally:
             app.fetch_pdf, app.synthesize_clipping = orig
 

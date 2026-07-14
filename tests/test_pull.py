@@ -1,5 +1,5 @@
 """Telegram pull-loop tests — OSError leaves the offset for a retry, other
-errors ack and move on. No network: telegram + _handle are stubbed.
+errors ack and move on. No network: telegram + handle_update are stubbed.
 
 Run: uv run python tests/test_pull.py
 """
@@ -39,19 +39,19 @@ def _config(root: Path) -> Config:
 
 def _run_pull(handle, updates: list[Update]) -> tuple[State, int, list[str]]:
     sent: list[str] = []
-    orig = (app.telegram.get_updates, app.telegram.send_message, app._handle)
+    orig = (app.telegram.get_updates, app.telegram.send_message, app.handle_update)
     app.telegram.get_updates = lambda *a, **k: updates
     app.telegram.send_message = lambda token, chat_id, text, **k: sent.append(text)
-    app._handle = handle
+    app.handle_update = handle
     try:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "BowerBird"
             root.mkdir(parents=True)
             state = State(path=root / "state.json")
-            processed = app._pull_telegram(_config(root), state)
+            processed = app.pull_telegram(_config(root), state)
             return state, processed, sent
     finally:
-        app.telegram.get_updates, app.telegram.send_message, app._handle = orig
+        app.telegram.get_updates, app.telegram.send_message, app.handle_update = orig
 
 
 def test_oserror_leaves_offset() -> None:

@@ -9,8 +9,6 @@ Three checks, no LLM calls, no network, writes nothing:
 Exit code 1 if any findings, 0 if clean.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,26 +20,26 @@ _ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 
 
-def _read_text(path: Path) -> str:
+def read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
 
 
-def _brain_files(config: Config) -> list[Path]:
+def brain_files(config: Config) -> list[Path]:
     """All markdown files under brain/ (sources/, bowers/, people/, tools/)."""
     if not config.brain_dir.is_dir():
         return []
     return sorted(config.brain_dir.rglob("*.md"))
 
 
-def _node_id(text: str) -> str | None:
+def node_id(text: str) -> str | None:
     m = _ID_RE.search(text)
     return m.group(1).strip() if m else None
 
 
-def _outbound_links(text: str) -> list[str]:
+def outbound_links(text: str) -> list[str]:
     return [m.group(1).strip() for m in _WIKILINK_RE.finditer(text)]
 
 
@@ -63,18 +61,18 @@ def run_lint(config: Config) -> tuple[LintFindings, int, int]:
 
     Pure I/O — no network.
     """
-    files = _brain_files(config)
+    files = brain_files(config)
     node_ids: set[str] = set()
     stems: set[str] = set()
     outbound: dict[Path, list[str]] = {}
 
     for path in files:
-        text = _read_text(path)
+        text = read_text(path)
         stems.add(path.stem)
-        nid = _node_id(text)
+        nid = node_id(text)
         if nid:
             node_ids.add(nid)
-        outbound[path] = _outbound_links(text)
+        outbound[path] = outbound_links(text)
 
     # Orphan review entries: ids in _review.json with no matching node.
     store = ReviewStore.load(config)
@@ -115,7 +113,7 @@ def run_lint(config: Config) -> tuple[LintFindings, int, int]:
     return findings, len(files), len(store._entries)
 
 
-def _print_findings(findings: LintFindings, node_count: int, review_count: int) -> int:
+def print_findings(findings: LintFindings, node_count: int, review_count: int) -> int:
     if findings.empty:
         print(f"lint: clean ({node_count} nodes, {review_count} review entries)")
         return 0
@@ -140,4 +138,4 @@ def _print_findings(findings: LintFindings, node_count: int, review_count: int) 
 
 def main(config: Config) -> int:
     findings, node_count, review_count = run_lint(config)
-    return _print_findings(findings, node_count, review_count)
+    return print_findings(findings, node_count, review_count)

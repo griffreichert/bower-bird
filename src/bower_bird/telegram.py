@@ -5,8 +5,6 @@ until we pull it from the laptop. getUpdates with a running offset is the
 whole mechanism.
 """
 
-from __future__ import annotations
-
 import httpx
 from pydantic import BaseModel, ConfigDict
 
@@ -21,7 +19,7 @@ class Update(BaseModel):
     text: str
 
 
-def _url(token: str, method: str) -> str:
+def api_url(token: str, method: str) -> str:
     return API_BASE.format(token=token, method=method)
 
 
@@ -33,7 +31,7 @@ def get_updates(token: str, offset: int, limit: int, timeout: float) -> list[Upd
     below it.
     """
     resp = httpx.get(
-        _url(token, "getUpdates"),
+        api_url(token, "getUpdates"),
         params={"offset": offset, "limit": limit, "timeout": 0},
         timeout=timeout,
     )
@@ -63,7 +61,7 @@ def get_updates(token: str, offset: int, limit: int, timeout: float) -> list[Upd
 def send_message(token: str, chat_id: int, text: str, timeout: float = 15.0) -> None:
     """Send a receipt back through the bot."""
     resp = httpx.post(
-        _url(token, "sendMessage"),
+        api_url(token, "sendMessage"),
         json={
             "chat_id": chat_id,
             "text": text,
