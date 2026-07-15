@@ -128,10 +128,16 @@ class Config(BaseSettings):
 
     @field_validator("allowed_chat_ids", mode="before")
     @classmethod
-    def _parse_chat_ids(cls, v: str | set[int] | None) -> set[int]:
-        if not isinstance(v, str):
-            return v if v is not None else set()
-        return {int(x) for x in v.replace(",", " ").split()}
+    def _parse_chat_ids(cls, v: str | int | set[int] | None) -> set[int]:
+        # env boundary: pydantic-settings json-parses "8504780905" to a bare
+        # int before this runs, so a single-id allowlist arrives as int.
+        if v is None:
+            return set()
+        if isinstance(v, int):
+            return {v}
+        if isinstance(v, str):
+            return {int(x) for x in v.replace(",", " ").split()}
+        return v
 
     @field_validator("vault_path", mode="before")
     @classmethod
