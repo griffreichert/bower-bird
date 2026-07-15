@@ -22,7 +22,10 @@ landing in the owned `BowerBird/` folder:
     proxy chain (fxtwitter → syndication CDN, `resolve.py` — no browser, no
     paid API) and shelves like any other link — one node per tweet, thin key
     ideas welcome (`peck d` is the triage). No digest, no `tweets/` reading
-    room, no default-discard.
+    room, no default-discard. Native X Articles (`x.com/i/article/…` behind
+    the tweet) shelve with the full article body pulled from fxtwitter's
+    `article` payload; the syndication fallback carries no article (rare
+    miss → media-only → to-clip).
   - **bare PDF link (`.pdf` path or arXiv `/pdf/`) → shelve via Sonnet:**
     download → `pypdf` text extraction → shelve. This is the ONE lane whose
     `synthesize_clipping` runs on `LLMSettings.paper_model` (Sonnet) — Haiku

@@ -5,6 +5,7 @@ Run: uv run python tests/test_resolve.py
 
 from bower_bird import resolve
 from bower_bird.resolve import (
+    article_markdown,
     expand_urls,
     from_fxtwitter,
     from_syndication,
@@ -60,6 +61,31 @@ SYNDICATION_MINIMAL = {
     "id_str": "444",
     "text": "minimal syndicated",
     "user": {"screen_name": "hank", "name": "Hank"},
+}
+
+ARTICLE_BLOCKS = {
+    "blocks": [
+        {"text": "Big Title", "type": "header-one"},
+        {"text": "Some intro paragraph.", "type": "unstyled"},
+        {"text": "first item", "type": "unordered-list-item"},
+        {"text": "second item", "type": "unordered-list-item"},
+        {"text": "a quote", "type": "blockquote"},
+        {"text": "", "type": "atomic"},
+        {"text": "closing paragraph", "type": "unstyled"},
+    ]
+}
+
+FXTWITTER_ARTICLE = {
+    "code": 200,
+    "tweet": {
+        "id": "555",
+        "text": "https://t.co/whatever",
+        "author": {"screen_name": "ivan", "name": "Ivan"},
+        "article": {
+            "title": "Long-running agents don't need tools",
+            "content": ARTICLE_BLOCKS,
+        },
+    },
 }
 
 
@@ -189,10 +215,48 @@ def main() -> int:
         failures += 1
         print("FAIL expand_urls: text with no t.co links should pass through unchanged")
 
+    # article_markdown: mixed block list, list items stay adjacent, atomic
+    # skipped, blank line elsewhere.
+    got = article_markdown(ARTICLE_BLOCKS)
+    want = (
+        "# Big Title\n"
+        "\n"
+        "Some intro paragraph.\n"
+        "\n"
+        "- first item\n"
+        "- second item\n"
+        "\n"
+        "> a quote\n"
+        "\n"
+        "closing paragraph"
+    )
+    if got != want:
+        failures += 1
+        print(f"FAIL article_markdown: want {want!r} got {got!r}")
+
+    if article_markdown({}) != "":
+        failures += 1
+        print("FAIL article_markdown: empty content should render empty")
+
+    # from_fxtwitter with an article payload populates article_title/body;
+    # without one, both stay empty.
+    tweet = from_fxtwitter(FXTWITTER_ARTICLE)
+    if tweet is None or tweet.article_title != "Long-running agents don't need tools":
+        failures += 1
+        print(f"FAIL from_fxtwitter article title: got {tweet!r}")
+    if tweet is None or "# Big Title" not in tweet.article_body:
+        failures += 1
+        print(f"FAIL from_fxtwitter article body: got {tweet!r}")
+
+    tweet = from_fxtwitter(FXTWITTER_MINIMAL)
+    if tweet is None or tweet.article_title != "" or tweet.article_body != "":
+        failures += 1
+        print(f"FAIL from_fxtwitter no article: got {tweet!r}")
+
     if failures:
         print(f"\n{failures} failure(s).")
         return 1
-    print(f"OK: {len(PARSE_ID_CASES) + 10} resolve cases passed.")
+    print(f"OK: {len(PARSE_ID_CASES) + 13} resolve cases passed.")
     return 0
 
 

@@ -43,6 +43,8 @@ class TweetText(BaseModel):
     quoted_handle: str = ""  # set when the tweet quotes another
     quoted_text: str = ""
     in_reply_to: str = ""  # screen_name this tweet replies to ("" if not a reply)
+    article_title: str = ""  # set when the tweet wraps a native X long-form Article
+    article_body: str = ""  # article content, rendered to markdown
 
 
 def parse_tweet_id(url: str) -> str | None:
@@ -91,15 +93,63 @@ def canonical_url(handle: str, tweet_id: str) -> str:
     return f"https://x.com/{handle}/status/{tweet_id}"
 
 
+_ARTICLE_BLOCK_PREFIXES = {
+    "header-one": "# ",
+    "header-two": "## ",
+    "header-three": "### ",
+    "unordered-list-item": "- ",
+    "ordered-list-item": "1. ",
+    "blockquote": "> ",
+}
+_ARTICLE_LIST_TYPES = {"unordered-list-item", "ordered-list-item"}
+
+
+def article_markdown(content: dict) -> str:
+    """Render a native X Article's Draft.js block list to markdown.
+
+    Ignores entityRanges/inlineStyleRanges — plain text carries the substance.
+    Blank line between blocks, except consecutive list items stay adjacent."""
+    lines: list[str] = []
+    prev_type = None
+    for block in content.get("blocks") or []:
+        block_type = block.get("type") or ""
+        text = block.get("text") or ""
+        if block_type == "atomic" or not text:
+            prev_type = None
+            continue
+        if lines and not (
+            block_type in _ARTICLE_LIST_TYPES and prev_type in _ARTICLE_LIST_TYPES
+        ):
+            lines.append("")
+        prefix = _ARTICLE_BLOCK_PREFIXES.get(block_type, "")
+        lines.append(f"{prefix}{text}")
+        prev_type = block_type
+    return "\n".join(lines)
+
+
 def from_fxtwitter(data: dict) -> TweetText | None:
     if data.get("code") != 200:
         return None
     tweet = data.get("tweet")
-    if not tweet or not tweet.get("text"):
+    # A native Article tweet can carry an empty `text` (the t.co pointer at
+    # the article lives in `raw_text` instead, ignored here) with the real
+    # content entirely in `article` — don't bail out before checking for one.
+    if not tweet or (not tweet.get("text") and not tweet.get("article")):
         return None
     author = tweet.get("author") or {}
     handle = author.get("screen_name", "")
     quote = tweet.get("quote")
+    article = tweet.get("article")
+    article_title = ""
+    article_body = ""
+    if article:
+        try:
+            article_title = article.get("title") or ""
+            article_body = article_markdown(article.get("content") or {})
+        except Exception:
+            # Malformed article payload — leave fields empty, never raise.
+            article_title = ""
+            article_body = ""
     return TweetText(
         id=str(tweet["id"]),
         url=canonical_url(handle, str(tweet["id"])),
@@ -109,6 +159,8 @@ def from_fxtwitter(data: dict) -> TweetText | None:
         quoted_handle=(quote or {}).get("author", {}).get("screen_name", ""),
         quoted_text=(quote or {}).get("text", ""),
         in_reply_to=tweet.get("replying_to") or "",
+        article_title=article_title,
+        article_body=article_body,
     )
 
 

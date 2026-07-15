@@ -179,6 +179,30 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
         if url != tweet.url:
             state.mark_url(tweet.url)
 
+    if tweet.article_body:
+        # Native X long-form Article — the tweet text is just a t.co pointer
+        # at x.com/i/article/... (JS-walled), but fxtwitter's payload carries
+        # the full article. That's the substance; shelve it directly and skip
+        # the wrapper/media-only classification below entirely.
+        meta = PageMeta(
+            url=tweet.url,
+            title=tweet.article_title
+            or f"@{tweet.author_handle}: {' '.join(tweet.text.split())}"[:80],
+            description="",
+            body_excerpt=tweet.article_body,
+            author=tweet.author_name,
+        )
+        receipt = finish_shelve(
+            config,
+            state,
+            meta,
+            note,
+            model=config.llm.model,
+            full_body=tweet.article_body,
+        )
+        mark_tweet_urls()
+        return f"📝 X article — {receipt}"
+
     prose, external_urls = tweet_prose_and_external_urls(tweet.text)
     # A quote-tweet's substance can live entirely in quoted_text — never
     # classify one as a wrapper/media-only send.
