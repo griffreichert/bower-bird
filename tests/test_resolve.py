@@ -3,7 +3,9 @@
 Run: uv run python tests/test_resolve.py
 """
 
+from bower_bird import resolve
 from bower_bird.resolve import (
+    expand_urls,
     from_fxtwitter,
     from_syndication,
     parse_tweet_id,
@@ -161,10 +163,36 @@ def main() -> int:
         failures += 1
         print(f"FAIL from_syndication minimal: got {tweet!r}")
 
+    # expand_urls: replaces a resolvable t.co link, leaves an unresolvable
+    # one as-is, never raises on a lookup failure.
+    orig_follow_redirect = resolve.follow_redirect
+
+    def fake_follow_redirect(url: str, timeout: float) -> str:
+        if url == "https://t.co/good":
+            return "https://example.com/real-article"
+        raise ValueError("network down")
+
+    resolve.follow_redirect = fake_follow_redirect
+    try:
+        got = expand_urls(
+            "check this out https://t.co/good and also https://t.co/bad", timeout=5
+        )
+    finally:
+        resolve.follow_redirect = orig_follow_redirect
+
+    want = "check this out https://example.com/real-article and also https://t.co/bad"
+    if got != want:
+        failures += 1
+        print(f"FAIL expand_urls: want {want!r} got {got!r}")
+
+    if expand_urls("no links here", timeout=5) != "no links here":
+        failures += 1
+        print("FAIL expand_urls: text with no t.co links should pass through unchanged")
+
     if failures:
         print(f"\n{failures} failure(s).")
         return 1
-    print(f"OK: {len(PARSE_ID_CASES) + 8} resolve cases passed.")
+    print(f"OK: {len(PARSE_ID_CASES) + 10} resolve cases passed.")
     return 0
 
 

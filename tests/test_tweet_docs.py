@@ -131,10 +131,89 @@ def test_unresolvable_tweet_falls_back_to_clip_queue() -> None:
         check("https://x.com/someone/status/3" in clip, "url queued to clip")
 
 
+def test_link_wrapper_tweet_shelves_the_linked_article() -> None:
+    """A tweet that's basically just a link to an outside article routes to
+    shelve_link with the external URL, not a near-empty tweet node."""
+    tweet = _tweet(4, text="https://example.com/great-article")
+    orig_shelve_link = app.shelve_link
+    calls: list[tuple] = []
+
+    def fake_shelve_link(config, state, url, note):
+        calls.append((url, note))
+        return "🧠 brain — Great Article"
+
+    app.shelve_link = fake_shelve_link
+    try:
+        receipt, root, seeds, state, cfg, d = _run(
+            "https://x.com/someone/status/4", tweet
+        )
+        with d:
+            check(len(calls) == 1, f"shelve_link called once: {calls}")
+            check(
+                calls[0][0] == "https://example.com/great-article",
+                f"external url passed through: {calls}",
+            )
+            check(
+                receipt.startswith("🔗 via @someone —"),
+                f"receipt prefixed: {receipt!r}",
+            )
+            check(
+                state.seen_url("https://x.com/someone/status/4"),
+                "origin tweet url marked",
+            )
+            check(state.seen_url(tweet.url), "canonical tweet url marked")
+            check(seeds == [], "no LLM synthesis call for the tweet itself")
+    finally:
+        app.shelve_link = orig_shelve_link
+
+
+def test_media_only_tweet_queues_to_clip() -> None:
+    """A tweet with no real prose and no external link — content's in an
+    image — goes to the clip queue for a human to look at."""
+    tweet = _tweet(5, text="")
+    receipt, root, seeds, state, cfg, d = _run("https://x.com/someone/status/5", tweet)
+    with d:
+        check(
+            receipt == "✂️ Media-only tweet — queued to clip",
+            f"media-only receipt: {receipt!r}",
+        )
+        check(seeds == [], "no LLM call for a media-only tweet")
+        clip = (root / "to-clip.md").read_text(encoding="utf-8")
+        check(tweet.url in clip, "canonical tweet url queued to clip")
+        check(state.seen_url("https://x.com/someone/status/5"), "origin url marked")
+
+
+def test_normal_tweet_with_a_link_still_shelves_as_a_tweet() -> None:
+    """Real prose alongside a link — not a bare wrapper — still becomes its
+    own tweet source node; the link rides in the body for further-reading
+    harvest."""
+    tweet = _tweet(
+        6,
+        text=(
+            "a long take on agent harnesses and why bash beats bespoke tools "
+            "https://example.com/great-article"
+        ),
+    )
+    receipt, root, seeds, state, cfg, d = _run("https://x.com/someone/status/6", tweet)
+    with d:
+        check(receipt.startswith("🧠"), f"normal tweet shelves to brain: {receipt!r}")
+        check(seeds == [""], f"tweet text feeds the LLM synthesis as usual: {seeds}")
+        node = root / "brain" / "sources" / "Kept tweet.md"
+        check(node.exists(), "tweet source node written")
+        text = node.read_text(encoding="utf-8")
+        check(
+            "https://example.com/great-article" in text,
+            "expanded link rides in the body",
+        )
+
+
 if __name__ == "__main__":
     test_bare_tweet_becomes_source_node()
     test_tweet_with_note_carries_seed_thought()
     test_unresolvable_tweet_falls_back_to_clip_queue()
+    test_link_wrapper_tweet_shelves_the_linked_article()
+    test_media_only_tweet_queues_to_clip()
+    test_normal_tweet_with_a_link_still_shelves_as_a_tweet()
     if _failures:
         print(f"{_failures} failure(s).")
         raise SystemExit(1)

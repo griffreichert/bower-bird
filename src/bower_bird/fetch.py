@@ -107,6 +107,32 @@ def safe_get(url: str, timeout: float) -> httpx.Response:
     raise ValueError("too many redirects")
 
 
+def follow_redirect(url: str, timeout: float) -> str:
+    """Follow HTTP redirects (HEAD, not GET — only the final URL is wanted)
+    and return it. Same SSRF guard as safe_get, re-checked at every hop.
+    Any failure (non-http scheme, blocked host, network error, too many
+    redirects) returns `url` unchanged — never raises."""
+    with httpx.Client(
+        headers={"User-Agent": _UA}, timeout=timeout, follow_redirects=False
+    ) as client:
+        current = url
+        for _ in range(_MAX_REDIRECTS + 1):
+            parsed = urlparse(current)
+            if parsed.scheme not in ("http", "https"):
+                return url
+            if not is_public_host(parsed.hostname or ""):
+                return url
+            try:
+                resp = client.head(current)
+            except Exception:
+                return url
+            if resp.is_redirect and resp.has_redirect_location:
+                current = str(resp.next_request.url)
+                continue
+            return current
+    return url
+
+
 class PageMeta(BaseModel):
     model_config = ConfigDict(frozen=True)
 

@@ -10,6 +10,7 @@ within the current session — no long-poll loop.
 import re
 import sys
 import time
+from urllib.parse import urlparse
 
 from bower_bird import inbox, ingest, telegram
 from bower_bird.config import Config
@@ -64,6 +65,71 @@ def finish_shelve(
     return f"🧠 brain — {truncate_title(plan.concise_title)}\nLinked: {links}"
 
 
+def shelve_link(config: Config, state: State, url: str, note: str) -> str:
+    """Fetch/render a link and shelve it (or PDF-extract it) as a source node.
+
+    Shared tail for any link the SHELVE lane resolves to an external page —
+    the plain-link path in handle_update, and the tweet lane's link-wrapper
+    case once the t.co shortlink is expanded to the real article."""
+    if is_pdf_url(url):
+        meta = fetch_pdf(url, timeout=config.fetch_timeout)
+        if not meta.body_excerpt:
+            # Unfetchable or scanned (no extractable text) — human's problem.
+            ingest.append_to_clip_queue(config, url)
+            state.mark_url(url)
+            return "✂️ Couldn't read that PDF — queued to clip"
+        # PDF lane runs synthesize_clipping on Sonnet — Haiku thins out on
+        # dense multi-page papers.
+        return finish_shelve(
+            config,
+            state,
+            meta,
+            note,
+            model=config.llm.paper_model,
+            full_body=meta.body_excerpt,
+        )
+
+    meta, body = fetch_rendered(url, timeout=config.fetch_timeout)
+    if meta.is_thin:
+        # Fetch came back empty (likely walled). Send it to the clip queue.
+        ingest.append_to_clip_queue(config, url, meta.title)
+        state.mark_url(url)
+        return "✂️ Couldn't read that one — queued to clip"
+
+    return finish_shelve(
+        config, state, meta, note, model=config.llm.model, full_body=body
+    )
+
+
+_TRIVIAL_PROSE_CHARS = 30  # below this, tweet text is "basically just a link"
+_TWEET_INTERNAL_HOSTS = {
+    "x.com",
+    "twitter.com",
+    "mobile.twitter.com",
+    "pbs.twimg.com",
+    "pic.twitter.com",
+    "t.co",  # unresolved shortlink — expand_urls already tried and failed
+}
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def tweet_prose_and_external_urls(text: str) -> tuple[str, list[str]]:
+    """Split (expanded) tweet text into bare prose (URLs stripped, whitespace
+    collapsed) and the external URLs it contains — anything not hosted on
+    x.com/twitter's own domains (media, quote links, a t.co we couldn't
+    expand). Used to tell a link-wrapper or media-only tweet apart from one
+    with real prose worth its own node."""
+    urls = _URL_RE.findall(text)
+    prose = " ".join(_URL_RE.sub("", text).split())
+    external = [
+        u
+        for u in urls
+        if (urlparse(u).hostname or "").removeprefix("www.")
+        not in _TWEET_INTERNAL_HOSTS
+    ]
+    return prose, external
+
+
 def shelve_tweet(
     config: Config, state: State, tweet: TweetText, note: str = "", origin_url: str = ""
 ) -> str:
@@ -93,12 +159,47 @@ def shelve_tweet(
 
 
 def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> str:
-    """Resolve a tweet URL and shelve it; queues to clip on resolution failure."""
+    """Resolve a tweet URL, classify it, and shelve accordingly.
+
+    A tweet whose text is basically nothing but a t.co link is useless as its
+    own source node — it's either a link-wrapper (pointer at an outside
+    article: shelve the article instead) or media-only (content's in an
+    image: queue to clip, a human has to look). Only a tweet with real prose
+    becomes its own node. Resolution failure falls back to the clip queue as
+    before.
+    """
     tweet = resolve_tweet(url, timeout=config.fetch_timeout)
     if tweet is None:
         ingest.append_to_clip_queue(config, url)
         state.mark_url(url)
         return "✂️ Couldn't resolve that tweet — queued to clip"
+
+    def mark_tweet_urls() -> None:
+        state.mark_url(url)
+        if url != tweet.url:
+            state.mark_url(tweet.url)
+
+    prose, external_urls = tweet_prose_and_external_urls(tweet.text)
+    trivial_prose = len(prose) < _TRIVIAL_PROSE_CHARS
+
+    if trivial_prose and len(external_urls) == 1:
+        external = external_urls[0]
+        if prose:
+            tail = f"{prose} — via @{tweet.author_handle}"
+            merged_note = f"{note} · {tail}" if note else tail
+        else:
+            merged_note = note
+        receipt = shelve_link(config, state, external, merged_note)
+        mark_tweet_urls()
+        state.mark_url(external)
+        return f"🔗 via @{tweet.author_handle} — {receipt}"
+
+    if trivial_prose and not external_urls:
+        # Content lives in an image, not text — a human has to look at it.
+        ingest.append_to_clip_queue(config, tweet.url)
+        mark_tweet_urls()
+        return "✂️ Media-only tweet — queued to clip"
+
     return shelve_tweet(config, state, tweet, note, origin_url=url)
 
 
@@ -152,34 +253,7 @@ def handle_update(config: Config, state: State, text: str, sender: str = "") -> 
     if needs_clipping(url):
         return shelve_tweet_url(config, state, url, parsed.note)
 
-    if is_pdf_url(url):
-        meta = fetch_pdf(url, timeout=config.fetch_timeout)
-        if not meta.body_excerpt:
-            # Unfetchable or scanned (no extractable text) — human's problem.
-            ingest.append_to_clip_queue(config, url)
-            state.mark_url(url)
-            return "✂️ Couldn't read that PDF — queued to clip"
-        # PDF lane runs synthesize_clipping on Sonnet — Haiku thins out on
-        # dense multi-page papers.
-        return finish_shelve(
-            config,
-            state,
-            meta,
-            parsed.note,
-            model=config.llm.paper_model,
-            full_body=meta.body_excerpt,
-        )
-
-    meta, body = fetch_rendered(url, timeout=config.fetch_timeout)
-    if meta.is_thin:
-        # Fetch came back empty (likely walled). Send it to the clip queue.
-        ingest.append_to_clip_queue(config, url, meta.title)
-        state.mark_url(url)
-        return "✂️ Couldn't read that one — queued to clip"
-
-    return finish_shelve(
-        config, state, meta, parsed.note, model=config.llm.model, full_body=body
-    )
+    return shelve_link(config, state, url, parsed.note)
 
 
 def run_telegram(config: Config | None = None) -> int:
