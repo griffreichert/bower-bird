@@ -6,11 +6,11 @@ Run: uv run python tests/test_ingest.py
 import tempfile
 from pathlib import Path
 
-from bower_bird import inbox, ingest
+from bower_bird import app, inbox, ingest
 from bower_bird.config import Config
 from bower_bird.fetch import PageMeta, needs_clipping
-from bower_bird.llm import ClippingPlan, EntityRef, FeynmanConcept
 from bower_bird.marks import Marks, extract_marks, extract_urls, pick_source_url
+from bower_bird.schema import ClippingPlan, EntityRef
 from bower_bird.state import State
 
 _failures = 0
@@ -27,8 +27,6 @@ def _config(root: Path) -> Config:
     return Config(
         telegram_bot_token="x",
         vault_path=root,
-        model="test",
-        build_model="test",
         state_path=root / "state.json",
         fetch_timeout=15,
         queue_limit=100,
@@ -146,20 +144,39 @@ def test_create_source_note_asserts_links() -> None:
             highlights=["a kept passage"], further_links=[("Ref", "https://r.co")]
         )
         path = ingest.create_source_note(
-            cfg, meta, plan, note="why it matters", marks=marks
+            cfg,
+            meta,
+            plan,
+            note="why it matters",
+            marks=marks,
+            full_body="The full rendered article body.",
         )
         check(path is not None and path.exists(), "source note written")
         check(path.stem == "Cool Post", "concise title used for graph node, not raw")
         src = path.read_text(encoding="utf-8")
         has_links = "[[Caching]]" in src and "[[Cache Invalidation]]" in src
         check(has_links, "links in source")
-        check("## Note\nwhy it matters" in src, "human note stored")
+        check(
+            "## Seed thoughts\n- why it matters" in src,
+            "seed thought stored verbatim as a bullet",
+        )
         has_ideas = "## Key ideas" in src and "- caches go stale" in src
         check(has_ideas, "key ideas distilled onto the node")
-        check("Why these connect" not in src, "why-connect prose dropped")
+        check(
+            "## Body\nThe full rendered article body." in src,
+            "full body inlined under ## Body",
+        )
+        # #13 section order: Key ideas → Seed thoughts → Links → marks → Body.
+        order = [
+            src.index("## Key ideas"),
+            src.index("## Seed thoughts"),
+            src.index("## Links"),
+            src.index("## Highlights"),
+            src.index("## Body"),
+        ]
+        check(order == sorted(order), f"schema section order holds: {order}")
         check("> a kept passage" in src, "highlight stored verbatim")
         check("[Ref](https://r.co)" in src, "further-reading link stored")
-        check("## Captured" not in src, "full article body NOT stored")
 
         # reciprocal links asserted into notes/ (new concept note created)
         concept = cfg.notes_dir / "Cache Invalidation.md"
@@ -309,7 +326,7 @@ def test_source_note_author_and_frozen() -> None:
         text = path.read_text(encoding="utf-8")
         check('author: "Jerry Liu"' in text, "author byline written to frontmatter")
         check("  - frozen" in text, "#promote/#frozen adds the frozen tag")
-        check("## Full text" in text, "#promote writes the full body section")
+        check("## Body" in text, "full body section written")
         check("full article body here" in text, "full body content present")
 
 
@@ -328,7 +345,8 @@ def test_source_note_no_author_no_frozen_by_default() -> None:
         text = path.read_text(encoding="utf-8")
         check("author:" not in text, "no author line when none known")
         check("frozen" not in text, "no frozen tag without the directive")
-        check("## Full text" not in text, "no full-text section without #promote")
+        check("## Body\nb" in text, "body inlined even without #promote")
+        check("## Seed thoughts" not in text, "no seed section without a seed")
 
 
 def test_source_link_divide() -> None:
@@ -384,220 +402,17 @@ def test_conflict_files_skipped() -> None:
     check(inbox.is_processable(Path("normal.md")), "process normal file")
 
 
-def _concept(handle: str = "Retrieval Augmented Generation") -> FeynmanConcept:
-    return FeynmanConcept(
-        handle=handle,
-        definition="Technique supplying an LLM with retrieved docs before answering.",
-        why="Lets the model answer accurately without memorising every fact.",
-        test_question="What problem does RAG solve that fine-tuning alone cannot?",
-        model_answer=(
-            "Fine-tuning bakes facts into the model's weights, but the model can't "
-            "update those weights between calls. RAG pulls fresh documents at query "
-            "time, so the model can answer questions about things that happened after "
-            "it was trained, or things too specific to have been in its training data."
-        ),
-    )
-
-
-def test_mint_bower_new() -> None:
-    """Fresh bower: frontmatter with id:, concept block, and backlink."""
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        concept = _concept()
-
-        path, bower_id = ingest.mint_bower(cfg, concept, "My Source")
-
-        check(path.exists(), "bower file created")
-        text = path.read_text(encoding="utf-8")
-        check(text.startswith("---"), "bower has frontmatter")
-        check(f"id: {bower_id}" in text, "id in frontmatter")
-        check(len(bower_id) == 36, "id is UUID")
-        check("<!-- bower:concept -->" in text, "concept sentinel present")
-        check(concept.definition in text, "definition written")
-        check(concept.why in text, "why written")
-        check(concept.test_question in text, "test question written")
-        check(concept.model_answer[:30] in text, "model answer written")
-        check("- [[My Source]]" in text, "source backlink asserted")
-        check("## Sources" in text, "source backlink under ## Sources, not ## Links")
-        check(
-            text.index("## Sources") < text.index("- [[My Source]]"),
-            "source sits under the Sources heading",
-        )
-
-
-def test_mint_bower_idempotent_id() -> None:
-    """Re-minting the same bower preserves the original id."""
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        concept = _concept()
-
-        _, first_id = ingest.mint_bower(cfg, concept, "Source A")
-        _, second_id = ingest.mint_bower(cfg, concept, "Source B")
-
-        check(first_id == second_id, "id is stable across re-mints")
-        text = (cfg.notes_dir / "Retrieval Augmented Generation.md").read_text(
-            encoding="utf-8"
-        )
-        check(text.count(f"id: {first_id}") == 1, "id appears exactly once")
-
-
-def test_mint_bower_additive_on_human_prose() -> None:
-    """Minting does not clobber human-authored prose outside the sentinel block."""
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        concept = _concept("Sparse Attention")
-        path = cfg.notes_dir / "Sparse Attention.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            "---\ntitle: Sparse Attention\n---\n# Sparse Attention\n\n"
-            "My own notes here.\n",
-            encoding="utf-8",
-        )
-
-        ingest.mint_bower(cfg, concept, "Paper on Attention")
-
-        text = path.read_text(encoding="utf-8")
-        check("My own notes here." in text, "human prose preserved")
-        check("<!-- bower:concept -->" in text, "concept block injected")
-        check(concept.definition in text, "definition added")
-
-
-def test_mint_bower_concept_block_updated() -> None:
-    """Re-minting with new concept data updates only the sentinel block."""
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        concept_v1 = _concept("Sparse Attention")
-        concept_v2 = FeynmanConcept(
-            handle="Sparse Attention",
-            definition="Updated definition.",
-            why="Updated why.",
-            test_question="Updated question?",
-            model_answer="Updated answer.",
-        )
-
-        path, bower_id = ingest.mint_bower(cfg, concept_v1, "Paper One")
-        _, second_id = ingest.mint_bower(cfg, concept_v2, "Paper Two")
-
-        check(bower_id == second_id, "id unchanged after update")
-        text = path.read_text(encoding="utf-8")
-        check("Updated definition." in text, "concept block updated to v2")
-        check(concept_v1.definition not in text, "v1 definition replaced")
-        check("My own notes" not in text, "no spurious content")
-
-
-def test_mint_bower_injects_id_into_existing_note() -> None:
-    """An existing bower without an id: gets one appended on first mint."""
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        concept = _concept("Contrastive Learning")
-        path = cfg.notes_dir / "Contrastive Learning.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            "---\ntitle: Contrastive Learning\ncreated: 2026-01-01\n---\n"
-            "# Contrastive Learning\n",
-            encoding="utf-8",
-        )
-
-        _, bower_id = ingest.mint_bower(cfg, concept, "Paper")
-
-        text = path.read_text(encoding="utf-8")
-        check(f"id: {bower_id}" in text, "id injected into existing note")
-        check("title: Contrastive Learning" in text, "existing frontmatter preserved")
-        check("created: 2026-01-01" in text, "existing created field preserved")
-
-
-def test_write_inbox_doc() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        meta = PageMeta(
-            url="https://example.com/article",
-            title="An Interesting Article",
-            description="about something",
-            body_excerpt="body text here",
-        )
-        body = "First paragraph of the article.\n\nSecond paragraph with more detail."
-
-        path = ingest.write_inbox_doc(cfg, meta, body)
-        check(path is not None, "write_inbox_doc returns a path")
-        assert path is not None
-        check(path.exists(), "inbox doc written to disk")
-        check(str(path).startswith(str(cfg.inbox_dir)), "path is inside inbox_dir")
-
-        text = path.read_text(encoding="utf-8")
-        check("# An Interesting Article" in text, "title as heading")
-        check("https://example.com/article" in text, "source url in doc")
-        check("First paragraph" in text, "body text included")
-        check("Second paragraph" in text, "second paragraph included")
-        check("to-read" in text, "tagged as to-read")
-        check("bot-rendered" in text, "bot-rendered tag in frontmatter")
-
-        # idempotent: second call for same title returns None
-        dup = ingest.write_inbox_doc(cfg, meta, body)
-        check(dup is None, "write_inbox_doc is idempotent on same title")
-
-
-def test_write_inbox_doc_empty_body() -> None:
-    """An empty body (failed extraction) still produces a readable stub."""
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        meta = PageMeta(
-            url="https://example.com/stub",
-            title="Stub Page",
-            description="",
-            body_excerpt="",
-        )
-        path = ingest.write_inbox_doc(cfg, meta, "")
-        check(path is not None and path.exists(), "stub doc written")
-        assert path is not None
-        text = path.read_text(encoding="utf-8")
-        check("open in browser" in text.lower(), "empty body fallback message present")
-
-
-def test_write_inbox_doc_stays_in_inbox_boundary() -> None:
-    """write_inbox_doc refuses paths outside inbox/ (enforced via _assert_writable)."""
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        meta = PageMeta(
-            url="https://example.com/safe",
-            title="Safe",
-            description="",
-            body_excerpt="",
-        )
-        path = ingest.write_inbox_doc(cfg, meta, "body")
-        # The written path must be inside the vault root
-        check(
-            path is not None and root in path.parents,
-            "inbox doc path stays inside vault_path",
-        )
-
-
 def test_process_inbox_url_dedup() -> None:
     """A re-clipped source (same URL, fresh bytes → fresh hash) is not minted
     twice. The URL guard returns before any LLM call, so this stays offline."""
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "BowerBird"
-        (root / "trinkets").mkdir(parents=True)
+        (root / "inbox").mkdir(parents=True)
         cfg = _config(root)
         state = State(path=root / "state.json")
         url = "https://x.com/foo/status/123"
         state.mark_url(url)  # already processed earlier under a different title
-        clip = root / "trinkets" / "some-clip.md"
+        clip = root / "inbox" / "some-clip.md"
         clip.write_text(
             f'---\ntitle: "Foo"\nsource: "{url}"\n---\nbody text\n', encoding="utf-8"
         )
@@ -606,7 +421,7 @@ def test_process_inbox_url_dedup() -> None:
             any("url already processed" in line for line in log),
             "re-clipped URL is skipped as a dup",
         )
-        check(not clip.exists(), "dup clip moved out of trinkets/")
+        check(not clip.exists(), "dup clip moved out of inbox/")
         check(
             not cfg.sources_dir.exists() or not any(cfg.sources_dir.glob("*.md")),
             "no source note minted for a dup URL",
@@ -812,18 +627,44 @@ def test_source_note_frontmatter_is_injection_safe() -> None:
         check(fm.count("source:") == 1, "url quote didn't spawn stray frontmatter")
 
 
-def test_write_concept_section_survives_backslash_model_output() -> None:
-    # A `\1`-style sequence in model output must not raise re.error.
-    concept = FeynmanConcept(
-        handle="regex-thing",
-        definition=r"uses \1 and \g<0> backrefs",
-        why="w",
-        test_question="q",
-        model_answer="a",
-    )
-    seeded = ingest.write_concept_section("# x\n", concept)
-    reapplied = ingest.write_concept_section(seeded, concept)  # exercises .sub path
-    check(r"\1" in reapplied, "backslash model text inserted literally, no crash")
+def test_pasted_prose_becomes_source_node() -> None:
+    """No link, real text → the paste lane: its own source node, sender as
+    author, the pasted text as the immutable ## Body. LLM stubbed."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        state = State(path=root / "state.json")
+
+        def fake_synthesize(meta, note, candidates, model, llm, **kw):
+            return ClippingPlan(
+                concise_title="A Shower Thought",
+                description="pasted prose",
+                category="test",
+                topics=[],
+                key_ideas=["one real claim"],
+            )
+
+        orig = app.synthesize_clipping
+        app.synthesize_clipping = fake_synthesize
+        try:
+            receipt = app.handle_update(
+                cfg, state, "a paragraph of my own thinking, no links", "Griffin"
+            )
+        finally:
+            app.synthesize_clipping = orig
+
+        check(receipt.startswith("🧠"), f"pasted prose shelves to brain: {receipt!r}")
+        node = cfg.sources_dir / "A Shower Thought.md"
+        check(node.exists(), "paste lane writes a source node")
+        text = node.read_text(encoding="utf-8")
+        check('author: "Griffin"' in text, "sender attributed as author")
+        check(
+            "## Body\na paragraph of my own thinking, no links" in text,
+            "pasted text is the immutable body",
+        )
+        # _inbox.md is only for the genuinely unprocessable now.
+        check(not cfg.telegram_inbox_path.exists(), "prose does not fall to _inbox")
 
 
 def test_ssrf_guard_rejects_internal_hosts() -> None:
@@ -849,7 +690,7 @@ def test_allowed_chat_id_set_parsing() -> None:
 def main() -> int:
     test_yaml_scalar_neutralizes_injection()
     test_source_note_frontmatter_is_injection_safe()
-    test_write_concept_section_survives_backslash_model_output()
+    test_pasted_prose_becomes_source_node()
     test_ssrf_guard_rejects_internal_hosts()
     test_allowed_chat_id_set_parsing()
     test_assert_writable()
@@ -869,14 +710,6 @@ def main() -> int:
     test_strip_directives()
     test_fetch_helpers()
     test_conflict_files_skipped()
-    test_mint_bower_new()
-    test_mint_bower_idempotent_id()
-    test_mint_bower_additive_on_human_prose()
-    test_mint_bower_concept_block_updated()
-    test_mint_bower_injects_id_into_existing_note()
-    test_write_inbox_doc()
-    test_write_inbox_doc_empty_body()
-    test_write_inbox_doc_stays_in_inbox_boundary()
     test_process_inbox_url_dedup()
     test_extract_urls()
     test_pick_source_url()

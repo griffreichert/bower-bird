@@ -6,61 +6,69 @@ what it is, the no-server architecture, the capture model, and the roadmap — s
 
 ## Capture model (spec)
 
-Two capture entry points, both landing in the owned `BowerBird/` folder:
+**Antilibrary (2026-07-13, #12/#13/#22): every send is shelved into `brain/`
+immediately — no read gate, no reading rooms, no read keyword.** Recall
+(`peck`), not reading, is the learning event. Two capture entry points, both
+landing in the owned `BowerBird/` folder:
 
 - **Telegram bot** (Tier-1 Haiku pull):
-  - **bare link → to-read:** rendered into a readable markdown doc in
-    `inbox/` (no distillation — a copy, not a summary). The human reads + marks
-    it there; moving it to `trinkets/` is the read signal.
-  - **bare X/Twitter link → tweet doc:** tweet text resolves via a proxy
-    chain (fxtwitter → syndication CDN, `resolve.py` — no browser, no paid
-    API) into one rendered doc per tweet in `tweets/` (its own reading room,
-    apart from the article `inbox/`). Move a doc to `trinkets/` to keep it
-    (marks optional at tweet scale); unmoved docs age out via the let-go
-    sweep — default is discard.
-  - **bare link the bot can't read or resolve → to-clip (residue):** other
-    JS-/login-walled pages (known domains skip fetch; others caught by a thin
-    fetch), plus the rare tweet the proxy chain misses, go to `to-clip.md` as
-    a `- [ ]` checklist. Open in a browser, Web Clipper into `inbox/`, then
-    the clip lane reads + files it. `bb drain` retries the queue's unchecked
-    X links through the resolver.
-  - **link + a note, or the word `read` (any case, before/after the link) →
-    learned:** create a source note in `sources/` + assert `[[links]]` into
-    `notes/`. The bare `read` marker fits the share-sheet flow (link first,
-    then type). X links resolve through the same proxy chain first — a tweet
-    read on X itself goes straight to the graph, skipping the digest queue
-    (the read already happened out there).
-  - **bare PDF link (`.pdf` path or arXiv `/pdf/`) → learned:** a sent PDF
-    counts as read. Download → `pypdf` text extraction → straight into the
-    graph via the learned lane (`sources/` note + `[[links]]`), skipping the
-    to-read inbox. No extractable text (scanned) or fetch failure → `to-clip.md`.
+  - **any link (bare, or with a note) → shelve:** fetch/render the body and
+    write a source node in `brain/sources/` right away — frontmatter
+    (id/title/source/author/created/tags), claim-shaped `## Key ideas`, the
+    note (if any) verbatim under `## Seed thoughts`, `## Links` into the
+    concept graph, and the full rendered body inlined under `## Body` (the
+    node is canonical; `archive/` is a recycle bin).
+  - **X/Twitter link → per-tweet source node:** tweet text resolves via a
+    proxy chain (fxtwitter → syndication CDN, `resolve.py` — no browser, no
+    paid API) and shelves like any other link — one node per tweet, thin key
+    ideas welcome (`peck d` is the triage). No digest, no `tweets/` reading
+    room, no default-discard.
+  - **bare PDF link (`.pdf` path or arXiv `/pdf/`) → shelve via Sonnet:**
+    download → `pypdf` text extraction → shelve. This is the ONE lane whose
+    `synthesize_clipping` runs on `LLMSettings.paper_model` (Sonnet) — Haiku
+    thins out on dense multi-page papers. No extractable text (scanned) or
+    fetch failure → `to-clip.md`.
+  - **pasted prose (no link) → source node:** the sender is the author, the
+    text is the immutable `## Body`. Your own thinking is a source too.
+  - **link the bot can't read or resolve → to-clip (residue):** JS-/login-
+    walled pages (known domains skip fetch; others caught by a thin fetch),
+    plus the rare tweet the proxy chain misses, go to `to-clip.md` as a
+    `- [ ]` checklist. Open in a browser, Web Clipper into `inbox/`, then the
+    clip lane shelves it. `bb drain` retries the queue's unchecked X links
+    through the resolver.
   - **`tool:` prefix + link → tools shelf:** append to `tools.md` (title +
     your note + one-line). A keep-for-later shelf of plugins/repos/tools —
     pure recall, NOT knowledge, never enters `brain/`. `tool:` with no link →
-    `_inbox.md`. (Distinct from a tool *named inside a read source* — that
-    becomes a `brain/tools/` leaf node; see Entity leaf nodes below.)
-  - **unprocessable (no link / junk) → `_inbox.md`** with a reason. Nothing
-    dropped.
-- **Obsidian Web Clipper → `inbox/`:** the Tier-1 pull reads the clean clip
-  body (skips `fetch`), writes a `sources/` note + links, moves the original to
-  `archive/`. A clip counts as *read* → processed immediately.
+    `_inbox.md`. (Distinct from a tool *named inside a source* — that becomes
+    a `brain/tools/` leaf node; see Entity leaf nodes below.)
+  - **genuinely unprocessable (empty / media-only / junk) → `_inbox.md`**
+    with a reason. Nothing dropped. This is the only thing `_inbox.md` is for.
+- **Obsidian Web Clipper → `inbox/`:** a transient drop target only — the
+  Tier-1 pull consumes it within one tick (reads the clean clip body, skips
+  `fetch`), writes the source node, moves the original to `archive/`. Never a
+  queue; nothing waits in `inbox/` for a human step.
 
-**Entity leaf nodes (`llm.EntityRef`, `ingest.create_leaf_note`).** A read
+**Distillation is one-shot, at ingest.** `synthesize_clipping` runs once per
+capture; marks added later never re-distill — `weave` owns distillation-layer
+refresh. Key ideas are 3–6 standalone testable claims, graded by signal:
+clipper `==highlights==` > Telegram seed thought > body on its own terms;
+archetype-adaptive (rich essay → several claims; single-claim tweet → one thin
+one; link-list → few/none, outbound links harvested). Concept notes get bare
+stubs + `[[links]]` only at ingest — earned synthesis substance is weave's job,
+never ingest's.
+
+**Entity leaf nodes (`schema.EntityRef`, `ingest.create_leaf_note`).** A
 source often names things worth their own node: **tools** (repos/libraries) →
 `brain/tools/`, **people** (authors/creators) → `brain/people/`. Haiku extracts
 these into `ClippingPlan.tools/people`, grounded on URLs pulled from the body
 (`marks.extract_urls`). Each is an **unquizzed leaf** — linked to concepts +
-backlinked from the source, but never minted as a bower and never seeded into
-the review store (no Feynman payload, no `peck`).
+backlinked from the source, but never quizzed or enrolled in review.
 
-**Reader marks (in a clip body, `marks.py`).** The source note is thin —
-provenance + the reader's marks, **not the article body** (the full clip stays
-cold in `archive/`). Four optional marks the reader leaves while reading:
-`==highlight==` (the durable unit — interesting/supports my knowledge → `##
-Highlights`, Tier-2 grows into nest concepts), `#dig` on a line (learn more → `##
-Dig deeper`), `> ? question` (my open question → `## Open questions`), and
-outbound `[text](url)` links (→ `## Further reading`, unread leads). Highlights
-anchor Haiku's concept/backlink proposal.
+**Reader marks (in a clip body, `marks.py`).** Optional signals the reader
+leaves in a clip before it's shelved: `==highlight==` (top of the signal
+ladder for key-idea extraction → `## Highlights`), `#dig` on a line (learn
+more → `## Dig deeper`), `> ? question` (my open question → `## Open
+questions`), and outbound `[text](url)` links (→ `## Further reading`).
 
 ## Invariants (must always hold)
 
@@ -89,10 +97,9 @@ Load-bearing. Don't regress them. Full text:
 
 The vault is **not** in this repo — it lives in iCloud (Obsidian). bower-bird
 owns one folder there, `BowerBird/` (`config.vault_path`), and writes **nowhere
-else**. Writable at runtime: `inbox/`, `tweets/`, `brain/sources/`,
-`brain/bowers/`, `brain/people/`, `brain/tools/`, `archive/` (incl. `unread/`),
-`to-clip.md`, `tools.md`, `let-go.md`, `_inbox.md`,
-`digests/`.
+else**. Writable at runtime: `inbox/` (clipper drop target), `brain/sources/`,
+`brain/bowers/`, `brain/people/`, `brain/tools/`, `archive/`, `to-clip.md`,
+`tools.md`, `_inbox.md`, `digests/`.
 
 Writes are additive: new files, or `append_link` appends under `## Links` —
 existing notes are never rewritten. `ingest.assert_writable` enforces the
@@ -113,27 +120,29 @@ Synthesis is split by cost shape (decided 2026-06-24):
   Code, driven by `BowerBird/CLAUDE.md`. No API tokens; you-triggered (`make
   weave`), never crond (subscription-in-cron is ToS-gray).
 
-Keep the Python path Haiku-only; do **not** route whole-graph synthesis through
-the API. Per-lane Tier-1 model is a one-line config change if a lane reads thin.
+Keep the Python path Haiku by default; do **not** route whole-graph synthesis
+through the API. Per-lane overrides live on `LLMSettings` — currently just the
+PDF lane's `paper_model` (Sonnet), because Haiku thins out on dense papers.
 
 ## Repo layout
 
 ```
 src/bower_bird/
-  config.py    env + owned-folder (BowerBird/) paths + model (frozen Config)
+  config.py    env + owned-folder (BowerBird/) paths + LLMSettings (frozen Config)
+  schema.py    pydantic data contracts (Lane/Parsed, ClippingPlan, EntityRef)
   state.py     telegram offset + url + clip-hash dedup (idempotency)
   telegram.py  getUpdates pull + send receipt
-  router.py    lane classification (tool: / bare link / link+note / read:)
+  router.py    lane classification (tool: / shelve / paste / no_link)
   marks.py     reader marks pulled from a clip body (highlight/dig/question/links)
   fetch.py     page metadata (title/description/excerpt)
   llm.py       Anthropic calls: describe_link, synthesize_clipping (pydantic)
-  ingest.py    owned-folder writes (sources/notes/inbox/to-clip/tools/_inbox), guarded
-  inbox.py     clipper inbox scan: clip -> source note + links -> archive
+  ingest.py    owned-folder writes (source nodes/to-clip/tools/_inbox), guarded
+  inbox.py     clipper inbox scan: clip -> source node + links -> archive
   app.py       pull orchestration (Telegram queue + clipper inbox)
   lint.py      read-only structural graph lint (orphans, broken links)
   __main__.py  `python -m bower_bird`
 tests/         router + ingest/inbox unit tests (pure logic, no network)
-scripts/       launchd install/uninstall, weave.sh (Claude Code Tier-2)
+scripts/       launchd install/uninstall, weave.sh, backfill_bodies, pilot_ingest
 notes/         symlink into the Obsidian vault — planning notes (gitignored)
 ```
 

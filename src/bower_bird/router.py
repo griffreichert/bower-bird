@@ -1,44 +1,26 @@
 """Router: tell the lanes apart by *how* the message was sent.
 
 | Send                          | Lane     |
-| ----------------------------- | -------- |
-| `tool:` + link                | tool     |
-| bare link                     | to-read  |
-| link + my note, or `read`     | learned  |
+| ------------------------------ | -------- |
+| `tool:` + link                 | tool     |
+| any link (bare, or +note)      | shelve   |
+| no link, real text             | paste    |
+| no link, nothing usable        | no_link  |
 
-The user's one-line "why" is the highest-value input, so anything beyond the
-bare URL routes to the learned lane. The word `read` alone (any case, before
-or after the link — the share-sheet flow is link first, then type) is an
-explicit I-read-this marker, not a note. An explicit `tool:` prefix overrides
+Antilibrary model (2026-07-13): every capture is shelved immediately, so
+there's no read-status fork left to parse for. A link — bare or with a note —
+is always the `shelve` lane; the note (if any) rides along as a seed thought
+for distillation. Text with no link at all is pasted prose and becomes its own
+source node (the `paste` lane). An explicit `tool:` prefix overrides
 everything — it's a keep-for-later shelf item, not knowledge.
 """
 
 import re
-from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from bower_bird.schema import Lane, Parsed
 
 _URL_RE = re.compile(r"https?://\S+")
-_READ_PREFIX_RE = re.compile(r"^\s*read\s*:", re.IGNORECASE)
 _TOOL_PREFIX_RE = re.compile(r"^\s*tool\s*:", re.IGNORECASE)
-# The whole note is just the word "read" (punctuation/whitespace around it OK):
-# an explicit I-read-this marker, not a note worth keeping.
-_READ_TOKEN_RE = re.compile(r"^\W*read\W*$", re.IGNORECASE)
-
-
-class Lane(StrEnum):
-    TO_READ = "to_read"
-    LEARNED = "learned"
-    TOOL = "tool"  # keep-for-later shelf (a plugin/repo/tool), not knowledge
-    NO_LINK = "no_link"  # nothing to capture; skipped quietly
-
-
-class Parsed(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    lane: Lane
-    url: str | None
-    note: str  # the user's surrounding note ("why"), empty for bare links
 
 
 def strip_trailing_punct(url: str) -> str:
@@ -57,18 +39,13 @@ def parse(text: str) -> Parsed:
         note = (body[: match.start()] + body[match.end() :]).strip()
         return Parsed(lane=Lane.TOOL, url=url, note=note)
 
-    explicit_read = bool(_READ_PREFIX_RE.match(text))
-    body = _READ_PREFIX_RE.sub("", text, count=1)
+    match = _URL_RE.search(text)
+    if match:
+        url = strip_trailing_punct(match.group(0))
+        note = (text[: match.start()] + text[match.end() :]).strip()
+        return Parsed(lane=Lane.SHELVE, url=url, note=note)
 
-    match = _URL_RE.search(body)
-    if not match:
-        return Parsed(lane=Lane.NO_LINK, url=None, note=text.strip())
-
-    url = strip_trailing_punct(match.group(0))
-    note = (body[: match.start()] + body[match.end() :]).strip()
-
-    if _READ_TOKEN_RE.match(note):
-        return Parsed(lane=Lane.LEARNED, url=url, note="")
-    if explicit_read or note:
-        return Parsed(lane=Lane.LEARNED, url=url, note=note)
-    return Parsed(lane=Lane.TO_READ, url=url, note="")
+    stripped = text.strip()
+    if stripped:
+        return Parsed(lane=Lane.PASTE, url=None, note=stripped)
+    return Parsed(lane=Lane.NO_LINK, url=None, note="")

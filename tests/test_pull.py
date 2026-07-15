@@ -29,8 +29,6 @@ def _config(root: Path) -> Config:
         # chat_id 1 gets dropped as an unauthorized sender.
         allowed_chat_ids="1",
         vault_path=root,
-        model="test",
-        build_model="test",
         state_path=root / "state.json",
         fetch_timeout=15,
         queue_limit=100,
@@ -55,7 +53,7 @@ def _run_pull(handle, updates: list[Update]) -> tuple[State, int, list[str]]:
 
 
 def test_oserror_leaves_offset() -> None:
-    def handle(config, state, text):
+    def handle(config, state, text, sender=""):
         raise OSError(11, "Resource deadlock avoided")
 
     updates = [Update(update_id=7, chat_id=1, text="https://a.example")]
@@ -66,7 +64,7 @@ def test_oserror_leaves_offset() -> None:
 
 
 def test_other_error_acks() -> None:
-    def handle(config, state, text):
+    def handle(config, state, text, sender=""):
         raise ValueError("poison")
 
     updates = [Update(update_id=7, chat_id=1, text="junk")]
@@ -77,7 +75,7 @@ def test_other_error_acks() -> None:
 
 def test_success_acks_and_receipts() -> None:
     updates = [Update(update_id=7, chat_id=1, text="ok")]
-    state, processed, sent = _run_pull(lambda c, s, t: "done", updates)
+    state, processed, sent = _run_pull(lambda c, s, t, sender="": "done", updates)
     check(state.telegram_offset == 8, "success advances the offset")
     check(processed == 1, "success counts as processed")
     check(sent == ["done"], "receipt is the handler's return")

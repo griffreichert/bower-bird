@@ -2,15 +2,17 @@
 
 Two jobs, both small and cheap:
 
-- `describe_link`  — one-line "what is it" metadata for the to-read lane.
+- `describe_link`  — one-line "what is it" metadata for the tools lane.
   Grounded ONLY on page metadata (title/description); never the body. This is
-  identification, not a summary — we don't distill unread articles.
-- `synthesize_clipping` — for the learned lane (the user has read it and added
-  a note), turn note + source into a clipping description and a set of
-  *proposed* [[backlinks]] drawn from existing evergreen notes.
+  identification, not a summary.
+- `synthesize_clipping` — every shelve (antilibrary: everything sent is
+  shelved immediately, no read gate) turns a source + optional seed thought
+  into claim-shaped key ideas and a set of *proposed* [[backlinks]] drawn from
+  existing evergreen notes.
 
-The clipping contract is a pydantic model; `messages.parse` derives the JSON
-schema from it and validates the response back into the model.
+The clipping contract is a pydantic model in `schema.py`; `messages.parse`
+derives the JSON schema from it and validates the response back into the
+model.
 """
 
 from typing import Literal
@@ -20,133 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from bower_bird.config import LLMSettings
 from bower_bird.fetch import PageMeta
-
-
-class FeynmanConcept(BaseModel):
-    """Gradeable Feynman payload for one load-bearing concept in a source.
-
-    The handle is a short reusable noun phrase that becomes the bower's title.
-    The test_question + model_answer pair is the quiz scaffold for `peck`.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    handle: str = Field(
-        description="2-5 word noun phrase — the reusable concept title. NOT a "
-        "sentence or claim (e.g. 'Retrieval-augmented generation', not 'RAG is "
-        "useful'). Must match a topic in the outer topics list."
-    )
-    definition: str = Field(
-        description="One plain sentence: what this concept IS. No jargon, no "
-        "hedging — state it flatly."
-    )
-    why: str = Field(
-        description="One line: why this concept matters — the practical payoff or "
-        "insight the reader gains."
-    )
-    test_question: str = Field(
-        description="A question that proves understanding of this concept. "
-        "Answering it correctly requires genuine grasp, not recall."
-    )
-    model_answer: str = Field(
-        description="A model answer written at the level of a thoughtful "
-        "12-year-old — clear, concrete, no jargon. This is the grading target "
-        "for `peck` (the quiz loop)."
-    )
-
-
-class EntityRef(BaseModel):
-    """A named thing mentioned in a source that deserves its own graph node —
-    a tool (repo/library/plugin) or a person (author/creator/figure). Filed as
-    an unquizzed leaf note, linked to concepts; NOT a bower, never quizzed.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(
-        description="The node title. For a tool, its real name (e.g. "
-        "'roboflow/supervision', not 'a CV library'). For a person, their full "
-        "name if known, else their handle (e.g. 'Piotr Skalski')."
-    )
-    url: str = Field(
-        default="",
-        description="Provenance URL for this entity if one appears in the "
-        "supplied links (the repo URL for a tool, the profile/author URL for a "
-        "person). Empty string if none is present — never invent one.",
-    )
-    note: str = Field(
-        default="",
-        description="One factual line: what this tool IS / who this person is "
-        "and why they appear here.",
-    )
-    topics: list[str] = Field(
-        default_factory=list,
-        description="Concept handles from the topics list this entity connects "
-        "to (e.g. a CV tool → 'Computer vision'). [] if none fit.",
-    )
-
-
-class ClippingPlan(BaseModel):
-    """Structured output for the learned lane. Pointers, never a summary."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    concise_title: str = Field(
-        description="A short, fluff-free title for this source — the graph node "
-        "label. Strip clickbait, subtitles, and '(And the N tricks...)' tails; "
-        "keep only the core subject, ideally 2-6 words (e.g. 'The Feynman "
-        "Method', not 'The Feynman Method: Why You Forget 90% of What You Read "
-        "(And the 4 Prompts That Fix It)'). Keep proper nouns intact."
-    )
-    description: str = Field(
-        description="One factual line: what this source is (type + topic)."
-    )
-    author: str = Field(
-        default="",
-        description="The source's author / byline, if the body or note names one "
-        "(e.g. 'Paul Graham', 'Jerry Liu'). This is attribution metadata, NOT a "
-        "request to make a person node. Empty string if no author is evident — "
-        "never guess.",
-    )
-    category: str = Field(
-        default="",
-        description="A single top-level category for this source — a short "
-        "lowercase noun the graph can group by (e.g. 'ai', 'writing', 'systems', "
-        "'biology'). REUSE a category already present in the candidate index "
-        "below when one reasonably fits; only coin a new one when none do. This "
-        "is the index's grouping column, so keep the vocabulary small.",
-    )
-    topics: list[str] = Field(
-        description="The coarse topic notes this source feeds — a rich source "
-        "usually feeds SEVERAL. Each is a SHORT, REUSABLE concept handle: a 2-5 "
-        "word noun phrase many sources could link to (e.g. 'Agentic loops', "
-        "'Verification in agent loops'), NOT a sentence/claim, NOT the source "
-        "title. PREFER the supplied existing candidates; add a new handle only "
-        "when no candidate fits and the topic is broad enough to reuse. [] if "
-        "none fit."
-    )
-    key_ideas: list[str] = Field(
-        default_factory=list,
-        description="The source's distilled load-bearing ideas — the substance a "
-        "reader should retain (e.g. for Ogilvy on writing: 'Write the way you "
-        "talk', 'Never write more than two pages', 'Use short words'). 3-6 "
-        "concrete bullets drawn ONLY from the supplied body/highlights — never "
-        "invented from prior knowledge of the topic. [] if the body is too thin "
-        "to extract real ideas (never pad).",
-    )
-    tools: list[EntityRef] = Field(
-        default_factory=list,
-        description="Tools named in this source — repos, libraries, plugins, "
-        "products worth their own shelf node (e.g. 'roboflow/supervision'). "
-        "Attach the repo/product URL from the supplied links. [] if none.",
-    )
-    people: list[EntityRef] = Field(
-        default_factory=list,
-        description="ONLY the people the reader explicitly tagged with #person "
-        "(their mention text is supplied below). Resolve each to a full name and "
-        "attach the profile URL from the supplied links. Do NOT add authors or "
-        "other names the reader did not tag. [] when no #person tags are given.",
-    )
+from bower_bird.schema import ClippingPlan
 
 
 class JudgeVerdict(BaseModel):
@@ -329,6 +205,7 @@ def synthesize_clipping(
     meta: PageMeta,
     note: str,
     candidate_index: str,
+    model: str,
     llm: LLMSettings,
     highlights: list[str] | None = None,
     body_urls: list[str] | None = None,
@@ -368,9 +245,10 @@ def synthesize_clipping(
         else ""
     )
     prompt = (
-        "I have READ this source and want to file it into my evergreen knowledge "
-        "vault. The vault links ideas with [[wikilinks]] and tags; folders don't "
-        "matter.\n\n"
+        "I'm shelving this source into my evergreen antilibrary vault — every "
+        "capture is filed the moment it arrives, there's no 'read' status to "
+        "earn first. The vault links ideas with [[wikilinks]] and tags; folders "
+        "don't matter.\n\n"
         "List the coarse topics this source feeds — a rich source usually feeds "
         "SEVERAL (don't force it down to one). PREFER titles already in the index "
         "below; add a new topic only when none fits and it's broad enough to "
@@ -380,11 +258,19 @@ def synthesize_clipping(
         "Assign a single top-level CATEGORY (a short lowercase noun). REUSE a "
         "category already present in the index below when one fits; only coin a "
         "new one when none do — keep the category vocabulary small.\n\n"
-        "Then distill the source's KEY IDEAS — the load-bearing substance a "
-        "reader should retain (3-6 concrete bullets). Draw them ONLY from the "
-        "body and highlights below; never invent ideas from your own prior "
-        "knowledge of the topic, and give [] if the body is too thin to extract "
-        "real ideas.\n\n"
+        "Then distill the source's KEY IDEAS — 3-6 standalone, testable CLAIMS a "
+        "reader could be quizzed on (e.g. 'self-attention replaces recurrence, "
+        "buying parallelism', never a topic label like 'discusses attention'). "
+        "Weight your signal: clipper ==highlights== (what the reader flagged) "
+        "outrank a Telegram seed thought, which outranks the body read on its "
+        "own terms. Draw claims ONLY from the body/highlights/seed thought below "
+        "— never invented from your own prior knowledge of the topic. Scale to "
+        "the source: a rich essay yields several claims; a single-claim tweet "
+        "yields one thin (but still real) claim — thin is fine, it's not your "
+        "job to pad it. A link-list source may yield few or none — its outbound "
+        "links are the substance, not its prose. A thread or quote-tweet is one "
+        "node with attribution preserved, not several. Give [] if the source is "
+        "too thin to extract a real claim.\n\n"
         "Extract TOOLS named in this source that deserve their own node (repos, "
         "libraries, plugins, products — e.g. 'roboflow/supervision'); give each "
         "its provenance URL from the supplied links, a one-line note, and the "
@@ -395,7 +281,7 @@ def synthesize_clipping(
         "a person node. Leave author '' if none is evident.\n\n"
         f"Source URL: {meta.url}\n"
         f"Source title: {meta.title}\n"
-        f"My note (why it matters): {note or '(none)'}\n"
+        f"My seed thought (if any): {note or '(none)'}\n"
         f"{highlight_block}"
         f"{person_block}"
         f"{links_block}\n"
@@ -404,7 +290,7 @@ def synthesize_clipping(
         f"Source excerpt (context only):\n{meta.body_excerpt[:3000]}"
     )
     response = anthropic_client().messages.parse(
-        model=llm.build_model,
+        model=model,
         max_tokens=llm.clipping_max_tokens,
         messages=[{"role": "user", "content": prompt}],
         output_format=ClippingPlan,

@@ -1,12 +1,12 @@
 """Entry point: `python -m bower_bird` (or the `bb` / `bower-bird` scripts).
 
 Subcommands (also exposed as their own `uv run <verb>` scripts):
-  (default)        One full pass: Telegram queue + trinkets gather (cron runs this).
-  pull             Pull the Telegram queue only (links → inbox/).
-  build            Build bowers from read+annotated trinkets/ → brain/bowers/.
-  peck             Run a spaced-rep quiz session over due bowers (pull-only).
+  (default)        One full pass: Telegram queue + clipper inbox gather (cron).
+  pull             Pull the Telegram queue only (every send shelves to brain/).
+  build            Gather Web Clipper drops in inbox/ → brain/sources/.
+  peck             Run a spaced-rep quiz session over due nodes (pull-only).
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
-  drain            Resolve unchecked X links in to-clip.md into tweet digests.
+  drain            Resolve unchecked X links in to-clip.md into source nodes.
   lint             Read-only structural graph lint (orphans, broken links).
 """
 
@@ -44,7 +44,7 @@ def pull() -> int:
 
 
 def build() -> int:
-    """`uv run build` — build bowers from trinkets/."""
+    """`uv run build` — gather Web Clipper drops in inbox/."""
     return run_lane(run_gather)
 
 

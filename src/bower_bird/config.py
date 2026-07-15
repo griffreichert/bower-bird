@@ -11,8 +11,8 @@ owned folder is `vault_path`. We locate it from the gitignored `notes/` symlink
 up from that target, and the owned folder is `<root>/BowerBird`. Override with
 BOWER_VAULT_PATH.
 
-Writable paths at runtime: inbox/, tweets/, trinkets/, sources/, notes/ (brain/bowers/),
-archive/, to-clip.md, tools.md, _inbox.md, digests/.
+Writable paths at runtime: inbox/ (clipper drop target), brain/ (sources/,
+bowers/, people/, tools/), archive/, to-clip.md, tools.md, _inbox.md, digests/.
 """
 
 import os
@@ -31,11 +31,13 @@ OWNED_FOLDER = "BowerBird"
 class LLMSettings(BaseModel):
     """LLM tunables: model names + per-call max-token caps.
 
-    Design, not deployment — not env-configurable. Two-model pipeline: `model`
-    (link identification) is cheap Haiku. `build_model` (synthesize_clipping:
-    linking + placement + extraction) runs on Sonnet — the linking quality is
-    what makes the graph worth reading, and build is manual so the cost is
-    triggered deliberately.
+    Design, not deployment — not env-configurable. Haiku-only for every Tier-1
+    lane, per-item and per-clip: `model` covers link identification AND
+    synthesize_clipping (linking + placement + extraction) for everything
+    Telegram-facing. `paper_model` is a single per-lane override — the PDF
+    lane alone runs synthesize_clipping on Sonnet, because Haiku thins out
+    extracting from 40 dense pages; every other lane stays cheap and
+    always-on.
 
     Haiku 4.5 does not take `thinking`/`effort` params — omit them. Small caps:
     these are one-liners and short JSON, not essays.
@@ -44,11 +46,15 @@ class LLMSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     model: str = Field(
-        default="claude-haiku-4-5", description="Tier-1 model: link identification."
+        default="claude-haiku-4-5",
+        description="Tier-1 model: link identification + synthesize_clipping "
+        "for every lane except the PDF lane.",
     )
-    build_model: str = Field(
+    paper_model: str = Field(
         default="claude-sonnet-5",
-        description="Build/clip synthesis model — linking, placement, extraction.",
+        description="PDF lane's synthesize_clipping model. Haiku thins out on "
+        "long dense PDFs (papers, reports); Sonnet handles the long-context "
+        "extraction. Used ONLY for the bare-PDF-link lane.",
     )
     describe_max_tokens: int = Field(
         default=120, gt=0, description="Cap for describe_link's one-line output."
@@ -119,9 +125,6 @@ class Config(BaseSettings):
     # eyeball thin extractions before the cold original is gone (build can starve
     # on thin bodies) — don't drop it to 0.
     archive_ttl_days: int = Field(default=30, ge=0, alias="BOWER_ARCHIVE_TTL_DAYS")
-    # Inbox docs unread after this many days are let go — moved to
-    # archive/unread/ and ledgered in let-go.md. 0 disables.
-    inbox_ttl_days: int = Field(default=30, ge=0, alias="BOWER_INBOX_TTL_DAYS")
 
     @field_validator("allowed_chat_ids", mode="before")
     @classmethod
@@ -158,24 +161,9 @@ class Config(BaseSettings):
     # --- Derived locations inside the owned folder (everything we touch) ---
     @property
     def inbox_dir(self) -> Path:
-        """Reading room: bot fills it (rendered clips); humans read + annotate
-        here; nothing is auto-processed from this folder (INVARIANT)."""
+        """Web Clipper transient drop target — the pull consumes it within one
+        tick (antilibrary model: everything sent is shelved, never queued)."""
         return self.vault_path / "inbox"
-
-    @property
-    def tweets_dir(self) -> Path:
-        """Tweet reading room: batched tweets-YYYY-MM-DD.md digests land here,
-        apart from inbox/ so the article queue and the tweet stream never mix.
-        Same rules as inbox/: humans read + mark here, nothing is auto-distilled;
-        the move to trinkets/ is the read signal."""
-        return self.vault_path / "tweets"
-
-    @property
-    def trinkets_dir(self) -> Path:
-        """Read+annotated items awaiting arrangement into brain/bowers/.
-        The move inbox/ (or tweets/) → trinkets/ is the read signal that
-        authorises graph writes. The ingest/gather scan reads from here only."""
-        return self.vault_path / "trinkets"
 
     @property
     def telegram_inbox_path(self) -> Path:
@@ -241,18 +229,10 @@ class Config(BaseSettings):
 
     @property
     def archive_dir(self) -> Path:
-        """Processed clipper originals, moved here (never hard-deleted)."""
+        """Recycle bin: processed clip originals, moved here (never
+        hard-deleted; `bb prune` GCs it after the TTL). Since #25 the source
+        node inlines the body — archive/ carries no unique knowledge."""
         return self.vault_path / "archive"
-
-    @property
-    def unread_archive_dir(self) -> Path:
-        """Cold storage for let-go inbox docs."""
-        return self.archive_dir / "unread"
-
-    @property
-    def let_go_path(self) -> Path:
-        """Ledger of let-go items, one line each."""
-        return self.vault_path / "let-go.md"
 
     @property
     def review_path(self) -> Path:

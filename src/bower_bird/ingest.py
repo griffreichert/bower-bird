@@ -18,10 +18,9 @@ from pathlib import Path
 
 from bower_bird.config import Config
 from bower_bird.fetch import PageMeta
-from bower_bird.llm import ClippingPlan, EntityRef, FeynmanConcept
 from bower_bird.marks import Marks
 from bower_bird.resolve import TweetText
-from bower_bird.review import ReviewStore
+from bower_bird.schema import ClippingPlan, EntityRef
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
 _LINKS_HEADING = "## Links"  # concept↔concept relations (sibling ideas)
@@ -298,86 +297,17 @@ def append_to_tools(
 
 
 # --------------------------------------------------------------------------- #
-# inbox fill (bot-rendered readable docs for the to-read lane)
+# tweet body rendering (reused by the shelve lane's source-node ## Body)
 # --------------------------------------------------------------------------- #
-
-_INBOX_DOC_TEMPLATE = """\
----
-title: "{title}"
-source: "{url}"
-created: {today}
-bower: bot-rendered
-tags:
-  - to-read
----
-# {title}
-
-> Source: [{url}]({url})
-
-{body}
-"""
-
-
-def write_inbox_doc(config: Config, meta: PageMeta, body: str) -> Path | None:
-    """Write a rendered readable doc into inbox/.
-
-    The bot fills inbox/ with fetch-rendered .md files so the human can read
-    + annotate directly in Obsidian. Returns the path written, or None if a
-    doc for this URL already exists (filename-level guard; primary dedup is
-    url dedup in state).
-
-    `body` is the paragraph-structured body text from fetch.fetch_rendered().
-    The doc is NOT a summary — it is the full fetched text rendered for reading.
-    """
-    config.inbox_dir.mkdir(parents=True, exist_ok=True)
-    safe = safe_filename(meta.title)
-    path = config.inbox_dir / f"{safe}.md"
-    assert_writable(config, path)
-
-    if path.exists():
-        return None
-
-    body_block = (
-        body.strip()
-        if body.strip()
-        else "_Unable to extract body text — open in browser to read._"
-    )
-    content = _INBOX_DOC_TEMPLATE.format(
-        title=yaml_scalar(meta.title),
-        url=yaml_scalar(meta.url),
-        today=today_iso(),
-        body=body_block,
-    )
-    path.write_text(content, encoding="utf-8")
-    # Second stream: auto-pulled ≠ read (see append_tweet_to_digest).
-    append_log(config, f"pull inbox/{path.name} (unread) {meta.url}")
-    return path
-
-
-# --------------------------------------------------------------------------- #
-# tweet docs (resolved X links, one rendered doc per tweet)
-# --------------------------------------------------------------------------- #
-
-_TWEET_DOC_TEMPLATE = """\
----
-title: "{title}"
-source: "{url}"
-author: "{author}"
-created: {today}
-bower: bot-rendered
-tags:
-  - to-read
-  - tweet
----
-# {title}
-
-> Source: [{url}]({url})
-
-{body}
-"""
 
 
 def format_tweet_body(tweet: TweetText) -> str:
+    """Render a resolved tweet's text (+ reply hint / quote block) as markdown.
+
+    Every send is shelved immediately now (antilibrary model, 2026-07-13) — a
+    tweet gets one source node straight away, not a rendered doc in a separate
+    reading room. This is the body renderer for that node's `## Body`.
+    """
     lines = []
     if tweet.in_reply_to:
         hint = f"*↳ reply to @{tweet.in_reply_to} — open the link for the thread*"
@@ -387,47 +317,6 @@ def format_tweet_body(tweet: TweetText) -> str:
         quoted = "\n".join(f"> {ln}" for ln in tweet.quoted_text.strip().splitlines())
         lines += ["", f"> **quoting @{tweet.quoted_handle}:**", quoted]
     return "\n".join(lines)
-
-
-def write_tweet_doc(config: Config, tweet: TweetText) -> Path | None:
-    """Write one rendered doc per resolved tweet into tweets/.
-
-    Reading flow: move a tweet doc to trinkets/ to keep it (the read signal —
-    marks welcome but optional for something this short); leave it in tweets/
-    and the let-go sweep discards it after the TTL. Returns the path written,
-    or None when this tweet already has a doc (idempotency belt; primary dedup
-    is url state).
-    """
-    config.tweets_dir.mkdir(parents=True, exist_ok=True)
-    snippet = " ".join(tweet.text.split())[:60].strip() or tweet.id
-    title = f"@{tweet.author_handle} — {snippet}"
-    path = config.tweets_dir / f"{safe_filename(title)}.md"
-    assert_writable(config, path)
-    if path.exists():
-        if tweet.url in path.read_text(encoding="utf-8"):
-            return None  # same tweet, already rendered
-        # Same author + same opening words, different tweet — disambiguate.
-        path = config.tweets_dir / f"{safe_filename(f'{title} {tweet.id}')}.md"
-        if path.exists():
-            return None
-
-    path.write_text(
-        _TWEET_DOC_TEMPLATE.format(
-            title=yaml_scalar(title),
-            url=yaml_scalar(tweet.url),
-            author=yaml_scalar(tweet.author_name),
-            today=today_iso(),
-            body=format_tweet_body(tweet),
-        ),
-        encoding="utf-8",
-    )
-    # Second stream: auto-pulled ≠ read. `pull` lines mark unread arrivals so
-    # "what's new" can list them as pointers; `build` lines are read knowledge.
-    append_log(
-        config,
-        f"pull tweet @{tweet.author_handle} → tweets/{path.name} (unread) {tweet.url}",
-    )
-    return path
 
 
 # --------------------------------------------------------------------------- #
@@ -469,17 +358,15 @@ def append_to_telegram_inbox(config: Config, text: str, reason: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# learned lane (read items — source note in sources/, links into notes/)
+# shelve lane (every capture — source note in sources/, links into notes/)
 # --------------------------------------------------------------------------- #
 
 _SOURCE_FRONTMATTER = """\
 ---
-title: "{title}"
 id: {source_id}
+title: "{title}"
 source: "{url}"
-created: {today}
-description: "{description}"
-{author_line}bower: generated
+{author_line}created: {today}
 tags:
 {tags}
 ---
@@ -508,15 +395,17 @@ def create_source_note(
     marks: Marks | None = None,
     full_body: str = "",
 ) -> Path | None:
-    """Write a (thin) source note into sources/ and assert links into the graph.
+    """Write a source note into sources/ and assert links into the graph (#13
+    schema): frontmatter (id/title/source/author/created/tags), then
+    Key ideas / Seed thoughts (if any) / Links / marks headings / Body.
 
-    The note is provenance + the reader's marks — NOT the article body (the full
-    clip stays in archive/ cold). `note` is the human's why-it-matters line (the
-    Telegram learned lane); `marks` are the highlights/dig/questions/links pulled
-    from a clip. `full_body` is written under `## Full text` only when the reader
-    tagged `#promote` (the node keeps the source whole, not just a thin husk).
-    Returns the source-note path, or None if one already exists (filename-level
-    guard; primary dedup is in state).
+    Antilibrary model — every capture is shelved immediately, no read gate.
+    `note` is the human's seed thought sent alongside the link (if any);
+    `marks` are the highlights/dig/questions/links pulled from a clip.
+    `full_body` is the source's full rendered body, inlined verbatim under
+    `## Body` — the node is canonical and self-contained; `archive/` is a cold
+    recycle bin, not the record of truth. Returns the source-note path, or
+    None if one already exists (filename-level guard; primary dedup is state).
     """
     marks = marks or Marks()
     config.sources_dir.mkdir(parents=True, exist_ok=True)
@@ -547,24 +436,24 @@ def create_source_note(
 
     parts = [
         _SOURCE_FRONTMATTER.format(
-            title=yaml_scalar(display_title),
             source_id=source_id,
+            title=yaml_scalar(display_title),
             url=yaml_scalar(meta.url),
-            today=today_iso(),
-            description=yaml_scalar(plan.description),
             author_line=author_line,
+            today=today_iso(),
             tags=build_source_tags(marks),
         ),
-        f"## Links\n{backlinks}\n",
     ]
     if plan.key_ideas:
         body = "\n".join(f"- {idea}" for idea in plan.key_ideas)
         parts.append(f"## Key ideas\n{body}\n")
+    if note.strip():
+        # Verbatim, human-authored, append-only — never distilled by the model.
+        parts.append(f"## Seed thoughts\n- {note.strip()}\n")
+    parts.append(f"## Links\n{backlinks}\n")
     if marks.highlights:
         body = "\n".join(f"> {h}" for h in marks.highlights)
         parts.append(f"## Highlights\n{body}\n")
-    if note.strip():
-        parts.append(f"## Note\n{note.strip()}\n")
     if marks.dig:
         body = "\n".join(f"- {d}" for d in marks.dig)
         parts.append(f"## Dig deeper\n{body}\n")
@@ -574,9 +463,9 @@ def create_source_note(
     if marks.further_links:
         body = "\n".join(f"- [{a}]({u})" for a, u in marks.further_links)
         parts.append(f"## Further reading\n{body}\n")
-    if marks.promote and full_body.strip():
-        # #promote keeps the source whole in the graph (frozen), not just a husk.
-        parts.append(f"## Full text\n{full_body.strip()}\n")
+    if full_body.strip():
+        # Immutable full rendered body, inlined and canonical.
+        parts.append(f"## Body\n{full_body.strip()}\n")
 
     path.write_text("\n".join(parts), encoding="utf-8")
 
@@ -667,131 +556,3 @@ def file_entities(config: Config, plan: ClippingPlan, source_title: str) -> list
                 append_link(config, source_path, leaf.stem, _SOURCES_HEADING)
             filed.append(f"{kind}:{leaf.stem}")
     return filed
-
-
-# --------------------------------------------------------------------------- #
-# bower minting (gather: trinkets/ → brain/bowers/ with Feynman payload)
-# --------------------------------------------------------------------------- #
-
-_ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
-_FM_CLOSE = re.compile(r"^---\s*$", re.MULTILINE)
-_CONCEPT_SECTION_RE = re.compile(
-    r"<!-- bower:concept -->\n.*?<!-- /bower:concept -->", re.DOTALL
-)
-
-_BOWER_FRONTMATTER = """\
----
-title: "{title}"
-id: {bower_id}
-created: {today}
-bower: generated
-tags:
-  - concept
----
-# {title}
-"""
-
-_CONCEPT_SECTION = """\
-<!-- bower:concept -->
-## Concept
-
-**Definition:** {definition}
-
-**Why it matters:** {why}
-
-**Test question:** {test_question}
-
-**Model answer:** {model_answer}
-<!-- /bower:concept -->"""
-
-
-def extract_bower_id(text: str) -> str | None:
-    """Pull the `id:` value from existing frontmatter, or None if absent."""
-    m = _ID_RE.search(text)
-    return m.group(1).strip() if m else None
-
-
-def inject_id_into_frontmatter(text: str, bower_id: str) -> str:
-    """Append `id: <bower_id>` as the first line inside the frontmatter block.
-
-    Called only when the file exists but has no `id:` yet (append-once).
-    Leaves all other frontmatter + body untouched.
-    """
-    # Find the opening --- and inject after it.
-    if not text.startswith("---"):
-        return text  # no frontmatter — leave as-is; id will be added on next full write
-    first_newline = text.index("\n")
-    return text[: first_newline + 1] + f"id: {bower_id}\n" + text[first_newline + 1 :]
-
-
-def write_concept_section(text: str, concept: FeynmanConcept) -> str:
-    """Replace the machine-managed concept block, or append it if absent.
-
-    Human-authored prose outside the <!-- bower:concept --> sentinel is
-    never touched. The sentinel block is bot-managed (rewrite-by-layer policy).
-    """
-    block = _CONCEPT_SECTION.format(
-        definition=concept.definition,
-        why=concept.why,
-        test_question=concept.test_question,
-        model_answer=concept.model_answer,
-    )
-    if _CONCEPT_SECTION_RE.search(text):
-        # Lambda replacement: insert `block` literally. A plain string arg would
-        # let a backslash sequence in model output (e.g. `\1`) be read as a
-        # backreference — re.error or silent mangling.
-        return _CONCEPT_SECTION_RE.sub(lambda _m: block, text)
-    # No existing block — append (before any trailing newline for tidiness)
-    sep = "" if text.endswith("\n") else "\n"
-    return f"{text}{sep}\n{block}\n"
-
-
-def mint_bower(
-    config: Config,
-    concept: FeynmanConcept,
-    source_title: str,
-) -> tuple[Path, str]:
-    """Create or update a bower note in brain/bowers/ carrying a Feynman payload.
-
-    Additive on human-authored prose — only the sentinel ``<!-- bower:concept
-    -->`` block and the Links section are bot-managed. The ``id:`` frontmatter
-    key is append-once (immutable after first write).
-
-    Returns ``(path, bower_id)`` — the note path and its stable id.
-    """
-    path = find_concept_path(config, concept.handle)
-    assert_writable(config, path)
-
-    if path.exists():
-        text = path.read_text(encoding="utf-8")
-        bower_id = extract_bower_id(text)
-        if bower_id is None:
-            # Existing note has no id yet — inject one (append-once).
-            bower_id = str(uuid.uuid4())
-            text = inject_id_into_frontmatter(text, bower_id)
-        # Update the machine-managed concept block; leave everything else alone.
-        text = write_concept_section(text, concept)
-    else:
-        bower_id = str(uuid.uuid4())
-        text = _BOWER_FRONTMATTER.format(
-            title=yaml_scalar(concept.handle),
-            bower_id=bower_id,
-            today=today_iso(),
-        )
-        text = write_concept_section(text, concept)
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-
-    # Assert the backlink from this bower to its source under `## Sources`
-    # (click-to-read-origin), kept apart from sibling-concept `## Links`.
-    append_link(config, path, source_title, _SOURCES_HEADING)
-
-    # Seed the review store for newly minted bowers (idempotent — existing
-    # entries are left untouched). Persisted immediately so the vault file
-    # stays consistent even when the caller doesn't call save() separately.
-    store = ReviewStore.load(config)
-    if store.seed(bower_id):
-        store.save()
-
-    return path, bower_id
