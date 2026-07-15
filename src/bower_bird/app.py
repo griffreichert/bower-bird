@@ -180,7 +180,9 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
             state.mark_url(tweet.url)
 
     prose, external_urls = tweet_prose_and_external_urls(tweet.text)
-    trivial_prose = len(prose) < _TRIVIAL_PROSE_CHARS
+    # A quote-tweet's substance can live entirely in quoted_text — never
+    # classify one as a wrapper/media-only send.
+    trivial_prose = len(prose) < _TRIVIAL_PROSE_CHARS and not tweet.quoted_text
 
     if trivial_prose and len(external_urls) == 1:
         external = external_urls[0]
