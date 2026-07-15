@@ -155,7 +155,7 @@ def from_fxtwitter(data: dict) -> TweetText | None:
         url=canonical_url(handle, str(tweet["id"])),
         author_handle=handle,
         author_name=author.get("name", ""),
-        text=tweet["text"],
+        text=tweet.get("text") or "",
         quoted_handle=(quote or {}).get("author", {}).get("screen_name", ""),
         quoted_text=(quote or {}).get("text", ""),
         in_reply_to=tweet.get("replying_to") or "",
