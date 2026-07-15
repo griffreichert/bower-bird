@@ -196,6 +196,41 @@ def test_bare_quote_tweet_still_shelves_as_a_tweet() -> None:
         check("the actual take" in text, "quoted text inlined in the body")
 
 
+def test_article_tweet_shelves_full_article_and_skips_clip_queue() -> None:
+    """A native X Article's tweet text is often just a bare internal link
+    (x.com/i/article/...) — trivial prose, no external url, which would
+    normally land in the media-only clip bucket. The article path must
+    short-circuit that classification and shelve the full article body."""
+    tweet = _tweet(
+        8,
+        text="https://x.com/i/article/1234567890",
+        article_title="Long-running agents don't need tools",
+        article_body="# Long-running agents don't need tools\n\nBash is enough.",
+    )
+    receipt, root, seeds, state, cfg, d = _run(
+        "https://x.com/someone/status/8", tweet, plan_title="Long article"
+    )
+    with d:
+        check(
+            receipt.startswith("📝"), f"article tweet gets its own receipt: {receipt!r}"
+        )
+        node = root / "brain" / "sources" / "Long article.md"
+        check(node.exists(), "article source node written")
+        text = node.read_text(encoding="utf-8")
+        check("Bash is enough." in text, "article markdown inlined in body")
+        check(
+            seeds == [""],
+            f"article body is the synthesis input, not tweet prose: {seeds}",
+        )
+        clip = root / "to-clip.md"
+        check(
+            not clip.exists() or tweet.url not in clip.read_text(encoding="utf-8"),
+            "article tweet does not land in the clip queue",
+        )
+        check(state.seen_url("https://x.com/someone/status/8"), "origin url marked")
+        check(state.seen_url(tweet.url), "canonical tweet url marked")
+
+
 def test_normal_tweet_with_a_link_still_shelves_as_a_tweet() -> None:
     """Real prose alongside a link — not a bare wrapper — still becomes its
     own tweet source node; the link rides in the body for further-reading
@@ -227,6 +262,7 @@ if __name__ == "__main__":
     test_link_wrapper_tweet_shelves_the_linked_article()
     test_media_only_tweet_queues_to_clip()
     test_bare_quote_tweet_still_shelves_as_a_tweet()
+    test_article_tweet_shelves_full_article_and_skips_clip_queue()
     test_normal_tweet_with_a_link_still_shelves_as_a_tweet()
     if _failures:
         print(f"{_failures} failure(s).")
