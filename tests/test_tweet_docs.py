@@ -183,6 +183,19 @@ def test_media_only_tweet_queues_to_clip() -> None:
         check(state.seen_url("https://x.com/someone/status/5"), "origin url marked")
 
 
+def test_bare_quote_tweet_still_shelves_as_a_tweet() -> None:
+    """A quote-tweet with no commentary of its own is NOT media-only — the
+    substance rides in quoted_text and belongs on its own node."""
+    tweet = _tweet(7, text="", quoted_handle="other", quoted_text="the actual take")
+    receipt, root, seeds, state, cfg, d = _run("https://x.com/someone/status/7", tweet)
+    with d:
+        check(receipt.startswith("🧠"), f"bare quote-tweet shelves: {receipt!r}")
+        text = (root / "brain" / "sources" / "Kept tweet.md").read_text(
+            encoding="utf-8"
+        )
+        check("the actual take" in text, "quoted text inlined in the body")
+
+
 def test_normal_tweet_with_a_link_still_shelves_as_a_tweet() -> None:
     """Real prose alongside a link — not a bare wrapper — still becomes its
     own tweet source node; the link rides in the body for further-reading
@@ -213,6 +226,7 @@ if __name__ == "__main__":
     test_unresolvable_tweet_falls_back_to_clip_queue()
     test_link_wrapper_tweet_shelves_the_linked_article()
     test_media_only_tweet_queues_to_clip()
+    test_bare_quote_tweet_still_shelves_as_a_tweet()
     test_normal_tweet_with_a_link_still_shelves_as_a_tweet()
     if _failures:
         print(f"{_failures} failure(s).")
