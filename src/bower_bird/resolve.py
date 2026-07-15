@@ -15,7 +15,9 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict
 
-from bower_bird.fetch import safe_get
+from bower_bird.fetch import follow_redirect, safe_get
+
+_TCO_URL_RE = re.compile(r"https://t\.co/\w+")
 
 _TWEET_HOSTS = {
     "x.com",
@@ -128,6 +130,37 @@ def from_syndication(data: dict) -> TweetText | None:
     )
 
 
+def expand_urls(text: str, timeout: float) -> str:
+    """Replace every `https://t.co/<id>` shortlink in `text` with the URL it
+    redirects to.
+
+    Verified against the live proxies (2026-07-15): neither fxtwitter's
+    `text` nor its `raw_text.text` expand t.co, and syndication's `text` is
+    also unexpanded (its `entities.urls[].expanded_url` does carry it, but
+    only on that one path) — so this always does the HTTP hop rather than
+    trusting either payload. A link that fails to resolve (network error,
+    blocked host, too many redirects) is left as-is. Never raises."""
+    for shortlink in set(_TCO_URL_RE.findall(text)):
+        try:
+            expanded = follow_redirect(shortlink, timeout)
+        except Exception:
+            continue
+        if expanded and expanded != shortlink:
+            text = text.replace(shortlink, expanded)
+    return text
+
+
+def expand_tweet_text(tweet: TweetText, timeout: float) -> TweetText:
+    """Expand t.co shortlinks on a resolved tweet's text + quoted_text, so
+    every consumer (shelve, dedup, further-reading harvest) sees real URLs."""
+    return tweet.model_copy(
+        update={
+            "text": expand_urls(tweet.text, timeout),
+            "quoted_text": expand_urls(tweet.quoted_text, timeout),
+        }
+    )
+
+
 def resolve_tweet(url: str, timeout: float) -> TweetText | None:
     """Resolve tweet text for an x.com/twitter.com status URL.
 
@@ -144,7 +177,7 @@ def resolve_tweet(url: str, timeout: float) -> TweetText | None:
         if resp.status_code == 200:
             result = from_fxtwitter(resp.json())
             if result is not None:
-                return result
+                return expand_tweet_text(result, timeout)
     except Exception:
         pass
 
@@ -157,7 +190,7 @@ def resolve_tweet(url: str, timeout: float) -> TweetText | None:
         if resp.status_code == 200:
             result = from_syndication(resp.json())
             if result is not None:
-                return result
+                return expand_tweet_text(result, timeout)
     except Exception:
         pass
 
