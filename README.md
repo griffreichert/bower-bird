@@ -141,6 +141,13 @@ The vault path auto-resolves from the `notes/` symlink, or set
 Run it on a daily `cron`/`launchd` schedule, or by hand whenever you want to
 process what's piled up.
 
+## Obsidian
+
+To view your BowerBird graph nodes easily, use this filter in graph view:
+```
+path:BowerBird/brain -path:"/_"
+```
+
 ## Contributing
 
 Architecture rules, invariants, the vault write boundary, the code map, and the
