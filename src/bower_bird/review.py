@@ -13,7 +13,7 @@ Leitner ladder: [1, 3, 7, 16, 35, 75] days.
 Unit = one card per source node (#18). A node enrols the first time it's seen
 due (``sync_sources``) rather than at ingest time — no ingest-side coupling.
 The stored Feynman payload is dead: questions are generated fresh at quiz
-time from the node's ``## Key ideas`` (+ ``## Note`` seed thought), depth
+time from the node's ``## Key ideas`` (+ ``## Seed thoughts``), depth
 scaled to the Leitner box. A never-reviewed node (empty history) is a
 teach-first card: key ideas are shown, no question/judge/grade, due bumps to
 tomorrow.
@@ -311,7 +311,11 @@ _TITLE_RE = re.compile(r'^title:\s*"?(.+?)"?\s*$', re.MULTILINE)
 _KEY_IDEAS_RE = re.compile(
     r"^## Key ideas\n(.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL
 )
-_NOTE_RE = re.compile(r"^## Note\n(.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL)
+# `## Seed thoughts` is the #13 node schema; `## Note` is the pre-antilibrary
+# section name — keep parsing it so legacy nodes stay quizzable until backfill.
+_NOTE_RE = re.compile(
+    r"^## (?:Seed thoughts|Note)\n(.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL
+)
 _LINKS_RE = re.compile(r"^## Links\n(.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _BULLET_RE = re.compile(r"^-\s+(.*)$", re.MULTILINE)
@@ -345,7 +349,10 @@ def parse_source_node(path: Path) -> SourceNode | None:
     seed = ""
     note_m = _NOTE_RE.search(text)
     if note_m:
-        seed = note_m.group(1).strip()
+        # Seed thoughts are stored as `- ` bullets (#13); legacy ## Note was
+        # bare prose. Strip the bullet markers either way.
+        lines = [ln.lstrip("- ").strip() for ln in note_m.group(1).splitlines()]
+        seed = " ".join(ln for ln in lines if ln)
 
     linked_titles: list[str] = []
     links_m = _LINKS_RE.search(text)

@@ -1,6 +1,8 @@
-"""PDF lane tests — url detection, text extraction, and the read-assumption
-routing (bare PDF link → learned lane → brain). No network: safe_get and the
-LLM calls are stubbed; extraction runs on a real handcrafted PDF.
+"""PDF lane tests — url detection, text extraction, the shelve routing (bare
+PDF link → straight to brain), and the sonnet lane selection (the PDF lane
+alone runs synthesize_clipping on `paper_model`, everything else on `model`).
+No network: safe_get and the LLM calls are stubbed; extraction runs on a real
+handcrafted PDF.
 
 Run: uv run python tests/test_pdf.py
 """
@@ -12,7 +14,7 @@ from bower_bird import app
 from bower_bird import fetch as fetch_mod
 from bower_bird.config import Config
 from bower_bird.fetch import is_pdf_url
-from bower_bird.llm import ClippingPlan
+from bower_bird.schema import ClippingPlan
 from bower_bird.state import State
 
 _failures = 0
@@ -30,8 +32,6 @@ def _config(root: Path) -> Config:
         telegram_bot_token="x",
         allowed_chat_ids="1",
         vault_path=root,
-        model="test",
-        build_model="test",
         state_path=root / "state.json",
         fetch_timeout=15,
         queue_limit=100,
@@ -100,33 +100,58 @@ def test_fetch_pdf_extracts_text() -> None:
 
 
 def test_bare_pdf_link_routes_to_brain() -> None:
-    def run(body: str) -> str:
-        orig = (app.fetch_pdf, app.synthesize_clipping)
+    models_used: list[str] = []
+
+    def run(body: str, url: str = "https://example.com/paper.pdf") -> str:
+        orig = (app.fetch_pdf, app.fetch_rendered, app.synthesize_clipping)
         app.fetch_pdf = lambda url, timeout: fetch_mod.PageMeta(
             url=url, title="A Paper", description="", body_excerpt=body
         )
-        app.synthesize_clipping = lambda meta, note, candidates, model: ClippingPlan(
-            concise_title="A Paper",
-            description="a paper",
-            topics=["Attention"],
-            key_ideas=["attention is enough"],
+        app.fetch_rendered = lambda url, timeout: (
+            fetch_mod.PageMeta(
+                url=url, title="An Article", description="d", body_excerpt=body
+            ),
+            body,
         )
+
+        def fake_synthesize(meta, note, candidates, model, llm, **kw):
+            models_used.append(model)
+            return ClippingPlan(
+                concise_title="A Paper",
+                description="a paper",
+                topics=["Attention"],
+                key_ideas=["attention is enough"],
+            )
+
+        app.synthesize_clipping = fake_synthesize
         try:
             with tempfile.TemporaryDirectory() as d:
                 root = Path(d) / "BowerBird"
                 root.mkdir(parents=True)
                 cfg = _config(root)
                 state = State(path=root / "state.json")
-                return app.handle_update(cfg, state, "https://example.com/paper.pdf")
+                return app.handle_update(cfg, state, url)
         finally:
-            app.fetch_pdf, app.synthesize_clipping = orig
+            app.fetch_pdf, app.fetch_rendered, app.synthesize_clipping = orig
 
     receipt = run("full extracted text")
     check(receipt.startswith("🧠"), f"bare PDF files to brain, got: {receipt!r}")
     check("[[Attention]]" in receipt, "receipt carries the linked concepts")
+    check(
+        models_used[-1] == Config.llm.paper_model,
+        f"PDF lane synthesizes on paper_model (sonnet), got {models_used[-1]!r}",
+    )
 
     receipt = run("")  # scanned/unfetchable → no text
     check(receipt.startswith("✂️"), f"textless PDF goes to clip queue: {receipt!r}")
+
+    # A plain HTML shelve stays on the cheap Tier-1 model — sonnet is PDF-only.
+    receipt = run("article body", url="https://example.com/article")
+    check(receipt.startswith("🧠"), f"html link shelves to brain: {receipt!r}")
+    check(
+        models_used[-1] == Config.llm.model,
+        f"non-PDF lane stays on the Tier-1 model, got {models_used[-1]!r}",
+    )
 
 
 def main() -> int:

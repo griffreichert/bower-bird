@@ -26,8 +26,6 @@ def _config(root: Path) -> Config:
     return Config(
         telegram_bot_token="x",
         vault_path=root,
-        model="test",
-        build_model="test",
         state_path=root / "state.json",
         fetch_timeout=15,
         queue_limit=100,

@@ -22,7 +22,7 @@ from bower_bird.fetch import (
     needs_clipping,
 )
 from bower_bird.llm import describe_link, synthesize_clipping
-from bower_bird.resolve import parse_tweet_id, resolve_tweet
+from bower_bird.resolve import TweetText, parse_tweet_id, resolve_tweet
 from bower_bird.router import Lane, parse
 from bower_bird.state import State
 
@@ -33,7 +33,92 @@ def truncate_title(title: str, limit: int = 60) -> str:
     return title if len(title) <= limit else title[: limit - 1].rstrip() + "…"
 
 
-def handle_update(config: Config, state: State, text: str) -> str:
+def finish_shelve(
+    config: Config,
+    state: State,
+    meta: PageMeta,
+    note: str,
+    *,
+    model: str,
+    full_body: str,
+) -> str:
+    """Synthesize + write a source node, then catalog/log/receipt. Shared tail
+    for every shelve-lane path (plain fetch, PDF, tweet, pasted prose)."""
+    candidates = ingest.read_index(config)
+    plan = synthesize_clipping(meta, note, candidates, model, config.llm)
+    path = ingest.create_source_note(config, meta, plan, note=note, full_body=full_body)
+    if meta.url:
+        state.mark_url(meta.url)
+    if path is None:
+        return f"🔁 Already in brain — {truncate_title(plan.concise_title)}"
+
+    ingest.file_entities(config, plan, path.stem)
+    ingest.upsert_index_line(config, path.stem, plan.category, plan.description)
+    for topic in plan.topics:
+        ingest.upsert_index_line(config, topic, plan.category, "", insert_only=True)
+    ingest.append_log(
+        config, f"build sources/{path.name} [{plan.category or 'uncategorized'}]"
+    )
+
+    links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
+    return f"🧠 brain — {truncate_title(plan.concise_title)}\nLinked: {links}"
+
+
+def shelve_tweet(
+    config: Config, state: State, tweet: TweetText, note: str = "", origin_url: str = ""
+) -> str:
+    """Shelve a resolved tweet straight into brain/ as its own source node.
+
+    `origin_url` is the URL as sent (may differ from the tweet's canonical
+    URL) — marked too so a resend of either form dedups.
+    """
+    meta = PageMeta(
+        url=tweet.url,
+        title=f"@{tweet.author_handle}: {' '.join(tweet.text.split())}"[:80],
+        description="",
+        body_excerpt=tweet.text,
+        author=tweet.author_name,
+    )
+    receipt = finish_shelve(
+        config,
+        state,
+        meta,
+        note,
+        model=config.llm.model,
+        full_body=ingest.format_tweet_body(tweet),
+    )
+    if origin_url and origin_url != tweet.url:
+        state.mark_url(origin_url)
+    return receipt
+
+
+def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> str:
+    """Resolve a tweet URL and shelve it; queues to clip on resolution failure."""
+    tweet = resolve_tweet(url, timeout=config.fetch_timeout)
+    if tweet is None:
+        ingest.append_to_clip_queue(config, url)
+        state.mark_url(url)
+        return "✂️ Couldn't resolve that tweet — queued to clip"
+    return shelve_tweet(config, state, tweet, note, origin_url=url)
+
+
+def shelve_prose(config: Config, state: State, text: str, sender: str) -> str:
+    """Pasted prose, no link: its own source node, sender as author, the text
+    itself as the immutable body."""
+    stripped = text.strip()
+    meta = PageMeta(
+        url="",
+        title=stripped[:80] or "Untitled note",
+        description="",
+        body_excerpt=stripped,
+        author=sender,
+    )
+    return finish_shelve(
+        config, state, meta, "", model=config.llm.model, full_body=stripped
+    )
+
+
+def handle_update(config: Config, state: State, text: str, sender: str = "") -> str:
     parsed = parse(text)
 
     if parsed.lane is Lane.NO_LINK:
@@ -41,8 +126,11 @@ def handle_update(config: Config, state: State, text: str) -> str:
         ingest.append_to_telegram_inbox(config, text, reason="no link")
         return "🗃️ No link — parked in _inbox"
 
+    if parsed.lane is Lane.PASTE:
+        return shelve_prose(config, state, parsed.note, sender)
+
     url = parsed.url
-    assert url is not None  # NO_LINK is the only url-less lane
+    assert url is not None  # NO_LINK/PASTE are the only url-less lanes
 
     if state.seen_url(url):
         return "🔁 Already captured"
@@ -59,100 +147,50 @@ def handle_update(config: Config, state: State, text: str) -> str:
             return f"🔁 Already in tools — {truncate_title(meta.title)}"
         return f"🔧 tools — {truncate_title(meta.title)}"
 
-    # A sent PDF counts as read (INVARIANTS, 2026-07-11): skip the to-read
-    # inbox and fall through to the learned lane below.
-    if parsed.lane is Lane.TO_READ and not is_pdf_url(url):
-        # Known JS-walled domains can't be read over httpx. Tweets resolve via
-        # the proxy chain into a per-tweet doc in tweets/; anything the chain
-        # can't get falls back to the clip queue (now the residue lane).
-        if needs_clipping(url):
-            tweet = resolve_tweet(url, timeout=config.fetch_timeout)
-            if tweet is not None:
-                path = ingest.write_tweet_doc(config, tweet)
-                state.mark_url(url)
-                if tweet.url != url:
-                    state.mark_url(tweet.url)
-                if path is None:
-                    return "🔁 Already in tweets"
-                return f"🐦 tweets — @{tweet.author_handle}"
-            ingest.append_to_clip_queue(config, url)
-            state.mark_url(url)
-            return "✂️ Can't read that one solo — queued to clip"
-
-        meta, body = fetch_rendered(url, timeout=config.fetch_timeout)
-        if meta.is_thin:
-            # Fetch came back empty (likely walled). Send it to the clip queue.
-            ingest.append_to_clip_queue(config, url, meta.title)
-            state.mark_url(url)
-            return "✂️ Couldn't read that one — queued to clip"
-
-        # Bare link → rendered readable doc in inbox/. The human reads + marks
-        # it there; moving it to trinkets/ is the read signal for further processing.
-        path = ingest.write_inbox_doc(config, meta, body)
-        state.mark_url(url)
-        if path is None:
-            return f"🔁 Already in inbox — {truncate_title(meta.title)}"
-        return f"📥 inbox — {truncate_title(meta.title)}"
-
-    # Lane.LEARNED — the user has read it and added a note (`read:` / link+note).
-    # A tweet read on X itself skips the digest queue: resolve its text and file
-    # it straight into the graph — the human's read already happened out there.
+    # Lane.SHELVE — every link becomes a source node immediately (antilibrary
+    # model, 2026-07-13): no read-status fork, just "can we get the body".
     if needs_clipping(url):
-        tweet = resolve_tweet(url, timeout=config.fetch_timeout)
-        if tweet is None:
-            ingest.append_to_clip_queue(config, url)
-            state.mark_url(url)
-            return "✂️ Couldn't resolve that tweet — queued to clip"
-        body = tweet.text
-        if tweet.quoted_text:
-            body += f"\n\nQuoting @{tweet.quoted_handle}:\n{tweet.quoted_text}"
-        meta = PageMeta(
-            url=tweet.url,
-            title=f"@{tweet.author_handle}: {' '.join(tweet.text.split())}"[:80],
-            description="",
-            body_excerpt=body,
-            author=tweet.author_name,
-        )
-    elif is_pdf_url(url):
+        return shelve_tweet_url(config, state, url, parsed.note)
+
+    if is_pdf_url(url):
         meta = fetch_pdf(url, timeout=config.fetch_timeout)
         if not meta.body_excerpt:
             # Unfetchable or scanned (no extractable text) — human's problem.
             ingest.append_to_clip_queue(config, url)
             state.mark_url(url)
             return "✂️ Couldn't read that PDF — queued to clip"
-    else:
-        meta = fetch(url, timeout=config.fetch_timeout)
-    candidates = ingest.read_index(config)
-    plan = synthesize_clipping(meta, parsed.note, candidates, config.llm)
-    path = ingest.create_source_note(config, meta, plan, note=parsed.note)
-    state.mark_url(url)
-    if path is None:
-        return f"🔁 Already in brain — {truncate_title(plan.concise_title)}"
+        # PDF lane runs synthesize_clipping on Sonnet — Haiku thins out on
+        # dense multi-page papers.
+        return finish_shelve(
+            config,
+            state,
+            meta,
+            parsed.note,
+            model=config.llm.paper_model,
+            full_body=meta.body_excerpt,
+        )
 
-    # File named tool/person entities as their own leaf nodes (same as the clip lane).
-    ingest.file_entities(config, plan, path.stem)
+    meta, body = fetch_rendered(url, timeout=config.fetch_timeout)
+    if meta.is_thin:
+        # Fetch came back empty (likely walled). Send it to the clip queue.
+        ingest.append_to_clip_queue(config, url, meta.title)
+        state.mark_url(url)
+        return "✂️ Couldn't read that one — queued to clip"
 
-    # Catalog the source + ensure concept stubs in the index; log the build.
-    ingest.upsert_index_line(config, path.stem, plan.category, plan.description)
-    for topic in plan.topics:
-        ingest.upsert_index_line(config, topic, plan.category, "", insert_only=True)
-    ingest.append_log(
-        config, f"build sources/{path.name} [{plan.category or 'uncategorized'}]"
+    return finish_shelve(
+        config, state, meta, parsed.note, model=config.llm.model, full_body=body
     )
-
-    links = ", ".join(f"[[{n}]]" for n in plan.topics) or "none yet"
-    return f"🧠 brain — {truncate_title(plan.concise_title)}\nLinked: {links}"
 
 
 def run_telegram(config: Config | None = None) -> int:
-    """Pull the Telegram queue once (links → inbox/). Returns items processed."""
+    """Pull the Telegram queue once. Returns items processed."""
     config = config or Config()
     state = State.load(config.state_path)
     return pull_telegram(config, state)
 
 
 def run_gather(config: Config | None = None) -> int:
-    """Gather read+annotated trinkets/ → brain/bowers/. Returns items processed."""
+    """Gather Web Clipper drops in inbox/ → brain/. Returns items processed."""
     config = config or Config()
     state = State.load(config.state_path)
     clip_log = inbox.process_inbox(config, state)
@@ -162,23 +200,19 @@ def run_gather(config: Config | None = None) -> int:
 
 
 def run_all(config: Config | None = None) -> int:
-    """One full pass: Telegram queue + trinkets gather + inbox decay."""
+    """One full pass: Telegram queue + clipper inbox gather."""
     config = config or Config()
-    count = run_telegram(config) + run_gather(config)
-    from bower_bird.prune import let_go
-
-    for line in let_go(config):
-        print(f"  let-go: {line}")
-    return count
+    return run_telegram(config) + run_gather(config)
 
 
 def run_drain(config: Config | None = None) -> int:
     """`bb drain` — resolve the unchecked X links stuck in to-clip.md.
 
     One-shot backlog eater: each unchecked tweet URL is resolved through the
-    proxy chain into a per-tweet doc in tweets/ and its box checked. Non-tweet links
-    and resolution failures are left untouched (still yours to clip). Edits
-    to-clip.md in place — a bot-owned file whose whole contract is checkboxes.
+    proxy chain straight into its own source node and its box checked.
+    Non-tweet links and resolution failures are left untouched (still yours
+    to clip). Edits to-clip.md in place — a bot-owned file whose whole
+    contract is checkboxes.
     """
     config = config or Config()
     path = config.to_clip_path
@@ -186,6 +220,7 @@ def run_drain(config: Config | None = None) -> int:
         print("bb drain: no to-clip.md — nothing to do.")
         return 0
 
+    state = State.load(config.state_path)
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     unchecked = re.compile(r"^(\s*)- \[ \] (?:\[[^\]]*\]\()?(https?://[^\s)]+)\)?\s*$")
     drained = 0
@@ -194,19 +229,18 @@ def run_drain(config: Config | None = None) -> int:
         if not m or parse_tweet_id(m.group(2)) is None:
             continue
         url = m.group(2)
-        tweet = resolve_tweet(url, timeout=config.fetch_timeout)
-        if tweet is None:
+        receipt = shelve_tweet_url(config, state, url)
+        if receipt.startswith("✂️"):
             print(f"  drain: could not resolve {url}")
             continue
-        ingest.write_tweet_doc(config, tweet)
         lines[i] = line.replace("- [ ]", "- [x]", 1)
         drained += 1
-        print(f"  drain: @{tweet.author_handle} → tweets/")
+        print(f"  drain: {receipt.splitlines()[0]}")
         time.sleep(0.5)  # be a polite proxy citizen on long queues
 
     if drained:
         path.write_text("".join(lines), encoding="utf-8")
-        print(f"bb drain: resolved {drained} tweet(s) into tweets/ docs.")
+        print(f"bb drain: resolved {drained} tweet(s) into brain/sources/.")
     else:
         print("bb drain: nothing drained.")
     return drained
@@ -239,7 +273,7 @@ def pull_telegram(config: Config, state: State) -> int:
             continue
 
         try:
-            receipt = handle_update(config, state, update.text)
+            receipt = handle_update(config, state, update.text, update.author)
         except OSError as exc:
             # Transient filesystem error — iCloud raises EDEADLK (errno 11 on
             # macOS) reading a dataless file it hasn't materialized yet. Don't

@@ -1,9 +1,9 @@
-"""Trinkets gather: process read+annotated clips in `BowerBird/trinkets/`.
+"""Inbox gather: process Web Clipper drops in `BowerBird/inbox/`.
 
-The move inbox/ → trinkets/ is the read signal (per INVARIANTS). Clips land in
-inbox/ as the to-read reading room; the human reads + annotates them there, then
-moves them to trinkets/ — that move authorises graph writes. The bot never
-auto-processes inbox/.
+Antilibrary model (2026-07-13): every capture is shelved immediately, no
+reading gate. `inbox/` is the Web Clipper's transient drop target only — the
+pull consumes whatever landed there within one tick, never a queue to leave
+things in.
 
 The clipper already wrote clean markdown — so we skip `fetch.py` entirely and
 synthesise from the clip body, which sidesteps the scraper's failure on
@@ -108,6 +108,7 @@ def file_clip(
         meta,
         "",
         candidates,
+        config.llm.model,
         config.llm,
         highlights=marks.highlights,
         body_urls=body_urls,
@@ -158,16 +159,16 @@ def file_clip(
 
 
 def process_inbox(config: Config, state: State) -> list[str]:
-    """Process every clip in trinkets/ once. Returns one log line per clip.
+    """Process every clip dropped in inbox/ once. Returns one log line per clip.
 
-    Scans trinkets/ (read+annotated items), never inbox/ (the reading room).
-    The move inbox/ → trinkets/ is the human read signal.
+    inbox/ is the Web Clipper's transient drop target — nothing waits here for
+    a human read-and-move step; whatever's present gets shelved this tick.
     """
-    if not config.trinkets_dir.is_dir():
+    if not config.inbox_dir.is_dir():
         return []
 
     log: list[str] = []
-    for path in sorted(config.trinkets_dir.glob("*.md")):
+    for path in sorted(config.inbox_dir.glob("*.md")):
         if not is_processable(path):
             continue
         try:
@@ -188,11 +189,8 @@ def process_inbox(config: Config, state: State) -> list[str]:
         )
         # Same source re-clipped gets fresh bytes + a fresh LLM title, so the
         # content hash misses it — guard on the source URL too. Skip when absent,
-        # else every url-less clip would collide on "". Docs the bot itself
-        # rendered (tweet docs, inbox fills) are exempt: their url was marked at
-        # capture time, so this guard would false-dup every one of them — the
-        # content hash above still stops a double gather.
-        if fm.get("bower") != "bot-rendered" and meta.url and state.seen_url(meta.url):
+        # else every url-less clip would collide on "".
+        if meta.url and state.seen_url(meta.url):
             archive_clip(config, path, new_stem=meta.title)
             log.append(f"dup {path.name}: url already processed, archived")
             continue

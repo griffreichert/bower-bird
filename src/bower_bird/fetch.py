@@ -1,12 +1,9 @@
 """Fetch a URL and extract lightweight page metadata or a readable body.
 
-For the to-read lane we fetch + render a readable doc into inbox/ — the human
-can then read + annotate the .md directly. For the learned lane the user has
-already read it, so we also pull a slice of body text to ground the clipping.
-
-We must NEVER distill an article that hasn't been read (INVARIANTS). The inbox
-doc is a rendered copy, not a summary — the full text is there for the human.
-"""
+The shelve lane renders a link's full readable body (fetch_rendered) — it's
+inlined verbatim under the source node's `## Body` — plus a flat excerpt to
+ground the distillation. PDFs get text-extracted (fetch_pdf); tool links get
+metadata only (fetch)."""
 
 import ipaddress
 import socket
@@ -197,10 +194,9 @@ def fetch(url: str, timeout: float) -> PageMeta:
 
 
 def fetch_pdf(url: str, timeout: float) -> PageMeta:
-    """Download a PDF and extract its text for the learned lane.
+    """Download a PDF and extract its text for the shelve lane.
 
-    A sent PDF counts as read (INVARIANTS, 2026-07-11), so unlike HTML it never
-    lands in the to-read inbox — the caller synthesizes straight into brain/.
+    The caller synthesizes straight into brain/ (on `paper_model`).
     Returns thin meta (empty body_excerpt) on any failure, including a scanned
     PDF with no extractable text; the caller routes those to the clip queue.
     """

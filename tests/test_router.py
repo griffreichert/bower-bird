@@ -3,46 +3,41 @@
 Run: uv run python tests/test_router.py
 """
 
-from bower_bird.router import Lane, parse
+from bower_bird.router import parse
+from bower_bird.schema import Lane
 
 CASES = [
-    # bare link -> to-read
-    ("https://example.com/post", Lane.TO_READ, "https://example.com/post", ""),
-    ("  https://example.com/x  ", Lane.TO_READ, "https://example.com/x", ""),
-    # link + note -> learned
+    # bare link -> shelve (every link becomes a source node immediately now)
+    ("https://example.com/post", Lane.SHELVE, "https://example.com/post", ""),
+    ("  https://example.com/x  ", Lane.SHELVE, "https://example.com/x", ""),
+    # link + note -> shelve, note rides along as the seed thought
     (
         "great take on caching https://example.com/c",
-        Lane.LEARNED,
+        Lane.SHELVE,
         "https://example.com/c",
         "great take on caching",
     ),
     (
         "https://example.com/c — note after",
-        Lane.LEARNED,
+        Lane.SHELVE,
         "https://example.com/c",
         "— note after",
     ),
-    # read: prefix -> learned even with no note
+    # the retired `read:` prefix is now just ordinary note text
     (
         "read: https://example.com/r",
-        Lane.LEARNED,
+        Lane.SHELVE,
         "https://example.com/r",
-        "",
-    ),
-    (
-        "READ:https://example.com/r2",
-        Lane.LEARNED,
-        "https://example.com/r2",
-        "",
+        "read:",
     ),
     # trailing punctuation stripped off URL (and discarded, not returned to note)
     (
         "(https://example.com/p).",
-        Lane.LEARNED,  # leading "(" counts as surrounding text -> note lane
+        Lane.SHELVE,
         "https://example.com/p",
         "(",
     ),
-    # tool: prefix -> tool shelf (overrides note/read routing)
+    # tool: prefix -> tool shelf (overrides note/shelve routing)
     (
         "tool: https://github.com/x/y",
         Lane.TOOL,
@@ -55,37 +50,32 @@ CASES = [
         "https://github.com/x/y",
         "claude loop plugin",
     ),
-    # bare "read" marker, any case, before or after the link (share-sheet flow:
-    # link lands first, then type "read") -> learned, marker is not a note
+    # the bare "read" marker is now just ordinary note text riding the shelve lane
     (
         "https://x.com/u/status/1 read",
-        Lane.LEARNED,
+        Lane.SHELVE,
         "https://x.com/u/status/1",
-        "",
+        "read",
     ),
-    (
-        "https://x.com/u/status/1 Read.",
-        Lane.LEARNED,
-        "https://x.com/u/status/1",
-        "",
-    ),
-    (
-        "READ https://x.com/u/status/2",
-        Lane.LEARNED,
-        "https://x.com/u/status/2",
-        "",
-    ),
-    # "read" as an ordinary word inside a real note stays in the note
     (
         "great read on caching https://example.com/c2",
-        Lane.LEARNED,
+        Lane.SHELVE,
         "https://example.com/c2",
         "great read on caching",
     ),
     # tool: with no link is not collectible -> parked
     ("tool: icon gen thing", Lane.NO_LINK, None, "tool: icon gen thing"),
-    # no link
-    ("just some thoughts", Lane.NO_LINK, None, "just some thoughts"),
+    # no link, real text -> pasted prose, its own source node
+    ("just some thoughts", Lane.PASTE, None, "just some thoughts"),
+    (
+        "  a rambling note with no url at all  ",
+        Lane.PASTE,
+        None,
+        "a rambling note with no url at all",
+    ),
+    # no link, nothing usable -> parked
+    ("", Lane.NO_LINK, None, ""),
+    ("   ", Lane.NO_LINK, None, ""),
 ]
 
 

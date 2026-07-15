@@ -17,6 +17,10 @@ class Update(BaseModel):
     update_id: int
     chat_id: int
     text: str
+    # Sender display name — the paste lane's "sender as author" needs an
+    # identity to attribute pasted prose to; first_name is the friendliest
+    # available field, username the fallback for accounts without one.
+    author: str = ""
 
 
 def api_url(token: str, method: str) -> str:
@@ -48,11 +52,14 @@ def get_updates(token: str, offset: int, limit: int, timeout: float) -> list[Upd
         text = msg.get("text") or msg.get("caption")
         if not text:
             continue
+        frm = msg.get("from") or {}
+        author = frm.get("first_name") or frm.get("username") or ""
         updates.append(
             Update(
                 update_id=item["update_id"],
                 chat_id=msg["chat"]["id"],
                 text=text,
+                author=author,
             )
         )
     return updates

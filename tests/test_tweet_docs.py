@@ -1,11 +1,9 @@
-"""Tweet-doc lane tests — pure logic on a temp vault, no network.
+"""Tweet lane tests — pure logic on a temp vault, no network.
 
-Covers the per-tweet reading flow: write_tweet_doc (create / dup / same-title
-disambiguation / unread pull-log line) and the gather treating a moved tweet
-doc as a normal clip — including the bot-rendered exemption from the url
-dup-guard (tweet urls are marked at capture, so without it every tweet doc
-would false-dup at gather). Discard is decay's job now: an unmoved tweet doc
-ages out via let_go; a moved one is a keep.
+Antilibrary model: a tweet send resolves via the proxy chain (stubbed here)
+into ONE source node in brain/sources/, immediately — no tweets/ reading room,
+no digest, no default-discard. A note alongside the link rides as a seed
+thought; a resolution failure falls back to to-clip.
 
 Run: uv run python tests/test_tweet_docs.py
 """
@@ -13,10 +11,10 @@ Run: uv run python tests/test_tweet_docs.py
 import tempfile
 from pathlib import Path
 
-from bower_bird import inbox, ingest
+from bower_bird import app
 from bower_bird.config import Config
-from bower_bird.llm import ClippingPlan
 from bower_bird.resolve import TweetText
+from bower_bird.schema import ClippingPlan
 from bower_bird.state import State
 
 _failures = 0
@@ -32,6 +30,7 @@ def check(cond: bool, msg: str) -> None:
 def _config(root: Path) -> Config:
     return Config(
         telegram_bot_token="x",
+        allowed_chat_ids="1",
         vault_path=root,
         state_path=root / "state.json",
         fetch_timeout=15,
@@ -51,101 +50,92 @@ def _tweet(i: int, **kw) -> TweetText:
     return TweetText(**defaults)
 
 
-def test_write_creates_and_dedups() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
+def _run(text: str, tweet: TweetText | None, plan_title: str = "Kept tweet"):
+    """Send one Telegram text through handle_update with resolve + LLM stubbed.
+
+    Returns (receipt, root, seeds) — seeds collects the note passed to
+    synthesize_clipping so seed-thought threading is observable.
+    """
+    seeds: list[str] = []
+
+    def fake_synthesize(meta, note, candidates, model, llm, **kw):
+        seeds.append(note)
+        return ClippingPlan(
+            concise_title=plan_title,
+            description="stub",
+            category="test",
+            topics=[],
+            key_ideas=["one thin quizzable claim"],
+        )
+
+    orig = (app.resolve_tweet, app.synthesize_clipping)
+    app.resolve_tweet = lambda url, timeout: tweet
+    app.synthesize_clipping = fake_synthesize
+    d = tempfile.TemporaryDirectory()
+    root = Path(d.name) / "BowerBird"
+    root.mkdir(parents=True)
+    try:
         cfg = _config(root)
+        state = State(path=root / "state.json")
+        receipt = app.handle_update(cfg, state, text)
+        return receipt, root, seeds, state, cfg, d
+    finally:
+        app.resolve_tweet, app.synthesize_clipping = orig
 
-        path = ingest.write_tweet_doc(cfg, _tweet(1))
-        check(path is not None, "first write creates a tweet doc")
-        check(path.parent.name == "tweets", "doc lands in tweets/")
-        text = path.read_text(encoding="utf-8")
-        check('source: "https://x.com/someone/status/1"' in text, "source url")
-        check("tweet number 1" in text, "tweet text present")
-        check("- tweet" in text, "tweet tag present")
-        check("bower: bot-rendered" in text, "bot-rendered marker present")
 
-        log = (root / "brain" / "_log.md").read_text(encoding="utf-8")
+def test_bare_tweet_becomes_source_node() -> None:
+    tweet = _tweet(1, quoted_handle="other", quoted_text="quoted line")
+    receipt, root, seeds, state, cfg, d = _run("https://x.com/someone/status/1", tweet)
+    with d:
+        check(receipt.startswith("🧠"), f"tweet shelves straight to brain: {receipt!r}")
+        node = root / "brain" / "sources" / "Kept tweet.md"
+        check(node.exists(), "per-tweet source node written")
+        text = node.read_text(encoding="utf-8")
+        check("tweet number 1" in text, "tweet text inlined")
+        check("## Body" in text, "tweet body lands under ## Body")
+        check("> **quoting @other:**" in text, "quote block rendered in the body")
+        check('author: "Some One"' in text, "tweet author in frontmatter")
+        check("id: " in text, "node minted an id")
+        check(not (root / "tweets").exists(), "no tweets/ reading room created")
+        check(seeds == [""], "bare link carries no seed thought")
         check(
-            "pull tweet @someone → tweets/" in log and "(unread)" in log,
-            "arrival logged as an unread pull line",
+            state.seen_url("https://x.com/someone/status/1"),
+            "origin url marked processed",
         )
 
-        again = ingest.write_tweet_doc(cfg, _tweet(1))
-        check(again is None, "same tweet twice → dup, not rewritten")
-        log = (root / "brain" / "_log.md").read_text(encoding="utf-8")
-        check(log.count("pull tweet") == 1, "dup write logs no second pull line")
 
-        # Same author + same opening words, different tweet id → new file.
-        clash = ingest.write_tweet_doc(
-            cfg,
-            _tweet(
-                2, text=_tweet(1).text, id="999", url="https://x.com/someone/status/999"
-            ),
+def test_tweet_with_note_carries_seed_thought() -> None:
+    receipt, root, seeds, state, cfg, d = _run(
+        "sharp take on harnesses https://x.com/someone/status/2", _tweet(2)
+    )
+    with d:
+        check(receipt.startswith("🧠"), f"tweet+note shelves to brain: {receipt!r}")
+        check(seeds == ["sharp take on harnesses"], f"note fed as seed: {seeds}")
+        text = (root / "brain" / "sources" / "Kept tweet.md").read_text(
+            encoding="utf-8"
         )
-        check(clash is not None and clash != path, "title clash disambiguated by id")
-
-        quoted = ingest.write_tweet_doc(
-            cfg, _tweet(3, quoted_handle="other", quoted_text="quoted line")
-        )
-        qtext = quoted.read_text(encoding="utf-8")
-        check("> **quoting @other:**" in qtext, "quote block rendered")
-
-        reply = ingest.write_tweet_doc(cfg, _tweet(4, in_reply_to="parent"))
         check(
-            "reply to @parent" in reply.read_text(encoding="utf-8"),
-            "thread hint rendered for replies",
+            "## Seed thoughts\n- sharp take on harnesses" in text,
+            "seed thought stored verbatim on the node",
         )
 
 
-def test_gather_files_moved_tweet_doc() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        root.mkdir()
-        cfg = _config(root)
-        state = State.load(cfg.state_path)
-
-        doc = ingest.write_tweet_doc(
-            cfg, _tweet(2, text="this one is ==worth keeping== for sure")
+def test_unresolvable_tweet_falls_back_to_clip_queue() -> None:
+    receipt, root, seeds, state, cfg, d = _run("https://x.com/someone/status/3", None)
+    with d:
+        check(
+            receipt.startswith("✂️"), f"unresolvable tweet queues to clip: {receipt!r}"
         )
-        # Capture marks the url — the gather's dup-guard must NOT eat the doc.
-        state.mark_url("https://x.com/someone/status/2")
-
-        # Human moves it to trinkets/ — the read/keep signal.
-        trinket = root / "trinkets" / doc.name
-        trinket.parent.mkdir(parents=True)
-        doc.rename(trinket)
-
-        calls: list[str] = []
-
-        def fake_synthesize(meta, note, candidates, model, **kw):
-            calls.append(meta.url)
-            return ClippingPlan(
-                concise_title="Kept tweet",
-                description="stub",
-                category="test",
-                topics=[],
-                key_ideas=[],
-            )
-
-        real = inbox.synthesize_clipping
-        inbox.synthesize_clipping = fake_synthesize
-        try:
-            log = inbox.process_inbox(cfg, state)
-        finally:
-            inbox.synthesize_clipping = real
-
-        check(calls == ["https://x.com/someone/status/2"], f"synthesised (got {calls})")
-        check((root / "brain" / "sources" / "Kept tweet.md").exists(), "source note")
-        check(not trinket.exists(), "tweet doc archived after gather")
-        check(any("sources/Kept tweet.md" in line for line in log), f"log line: {log}")
+        check(seeds == [], "no LLM call for an unresolvable tweet")
+        clip = (root / "to-clip.md").read_text(encoding="utf-8")
+        check("https://x.com/someone/status/3" in clip, "url queued to clip")
 
 
 if __name__ == "__main__":
-    test_write_creates_and_dedups()
-    test_gather_files_moved_tweet_doc()
+    test_bare_tweet_becomes_source_node()
+    test_tweet_with_note_carries_seed_thought()
+    test_unresolvable_tweet_falls_back_to_clip_queue()
     if _failures:
         print(f"{_failures} failure(s).")
         raise SystemExit(1)
-    print("OK: tweet-doc cases passed.")
+    print("OK: tweet lane cases passed.")
