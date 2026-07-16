@@ -60,7 +60,10 @@ class LLMSettings(BaseModel):
         default=120, gt=0, description="Cap for describe_link's one-line output."
     )
     clipping_max_tokens: int = Field(
-        default=1200, gt=0, description="Cap for synthesize_clipping's structured plan."
+        default=1600,
+        gt=0,
+        description="Cap for synthesize_clipping's structured plan. Sized for "
+        "detailed key-idea claims (mechanism/numbers, not headlines).",
     )
     judge_max_tokens: int = Field(
         default=300, gt=0, description="Cap for judge_answer's verdict + rationale."
