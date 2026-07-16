@@ -65,7 +65,7 @@ one; link-list → few/none, outbound links harvested). Concept notes get bare
 stubs + `[[links]]` only at ingest — earned synthesis substance is weave's job,
 never ingest's.
 
-**Entity leaf nodes (`schema.EntityRef`, `ingest.create_leaf_note`).** A
+**Entity leaf nodes (`schema.EntityRef`, `nodes.create_leaf_note`).** A
 source often names things worth their own node: **tools** (repos/libraries) →
 `brain/tools/`, **people** (authors/creators) → `brain/people/`. Haiku extracts
 these into `ClippingPlan.tools/people`, grounded on URLs pulled from the body
