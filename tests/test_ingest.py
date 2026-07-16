@@ -8,9 +8,9 @@ from pathlib import Path
 
 from bower_bird import app, inbox, ingest
 from bower_bird.config import Config
-from bower_bird.fetch import PageMeta, needs_clipping
+from bower_bird.fetch import needs_clipping
 from bower_bird.marks import Marks, extract_marks, extract_urls, pick_source_url
-from bower_bird.schema import ClippingPlan, EntityRef
+from bower_bird.schema import ClippingPlan, EntityRef, PageMeta
 from bower_bird.state import State
 
 _failures = 0

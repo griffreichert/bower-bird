@@ -15,7 +15,6 @@ from urllib.parse import urlparse
 from bower_bird import inbox, ingest, telegram
 from bower_bird.config import Config
 from bower_bird.fetch import (
-    PageMeta,
     fetch,
     fetch_pdf,
     fetch_rendered,
@@ -23,8 +22,9 @@ from bower_bird.fetch import (
     needs_clipping,
 )
 from bower_bird.llm import describe_link, synthesize_clipping
-from bower_bird.resolve import TweetText, parse_tweet_id, resolve_tweet
+from bower_bird.resolve import parse_tweet_id, resolve_tweet
 from bower_bird.router import Lane, parse
+from bower_bird.schema import PageMeta, TweetText
 from bower_bird.state import State
 
 

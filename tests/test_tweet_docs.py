@@ -13,8 +13,7 @@ from pathlib import Path
 
 from bower_bird import app
 from bower_bird.config import Config
-from bower_bird.resolve import TweetText
-from bower_bird.schema import ClippingPlan
+from bower_bird.schema import ClippingPlan, TweetText
 from bower_bird.state import State
 
 _failures = 0

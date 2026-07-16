@@ -28,7 +28,8 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from bower_bird.config import Config
-from bower_bird.review import Review, ReviewStore
+from bower_bird.review import ReviewStore
+from bower_bird.schema import Review
 
 _ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
 

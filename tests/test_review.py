@@ -16,13 +16,13 @@ from bower_bird.config import Config
 from bower_bird.review import (
     BAD_STREAK_FLAG,
     LEITNER_LADDER,
-    Review,
     ReviewStore,
     ShelfCensus,
     judge_review,
     read_grade,
     scan_sources,
 )
+from bower_bird.schema import Review
 
 _failures = 0
 

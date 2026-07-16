@@ -14,7 +14,7 @@ from bower_bird import app
 from bower_bird import fetch as fetch_mod
 from bower_bird.config import Config
 from bower_bird.fetch import is_pdf_url
-from bower_bird.schema import ClippingPlan
+from bower_bird.schema import ClippingPlan, PageMeta
 from bower_bird.state import State
 
 _failures = 0
@@ -104,13 +104,11 @@ def test_bare_pdf_link_routes_to_brain() -> None:
 
     def run(body: str, url: str = "https://example.com/paper.pdf") -> str:
         orig = (app.fetch_pdf, app.fetch_rendered, app.synthesize_clipping)
-        app.fetch_pdf = lambda url, timeout: fetch_mod.PageMeta(
+        app.fetch_pdf = lambda url, timeout: PageMeta(
             url=url, title="A Paper", description="", body_excerpt=body
         )
         app.fetch_rendered = lambda url, timeout: (
-            fetch_mod.PageMeta(
-                url=url, title="An Article", description="d", body_excerpt=body
-            ),
+            PageMeta(url=url, title="An Article", description="d", body_excerpt=body),
             body,
         )
 

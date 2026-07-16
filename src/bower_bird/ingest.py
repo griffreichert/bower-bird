@@ -17,10 +17,8 @@ from datetime import datetime
 from pathlib import Path
 
 from bower_bird.config import Config
-from bower_bird.fetch import PageMeta
 from bower_bird.marks import Marks
-from bower_bird.resolve import TweetText
-from bower_bird.schema import ClippingPlan, EntityRef
+from bower_bird.schema import ClippingPlan, EntityRef, PageMeta, TweetText
 
 _INVALID_FILENAME = re.compile(r'[/:\\?%*|"<>]')
 _LINKS_HEADING = "## Links"  # concept↔concept relations (sibling ideas)
