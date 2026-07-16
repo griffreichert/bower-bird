@@ -18,7 +18,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from bower_bird import ingest
+from bower_bird import ingest, nodes
 from bower_bird.config import Config
 from bower_bird.llm import synthesize_clipping
 from bower_bird.marks import (
@@ -103,7 +103,7 @@ def file_clip(
     marks = extract_marks(body, self_url=meta.url)
     clean = strip_directives(body)
     meta = meta.model_copy(update={"body_excerpt": clean[:_BODY_LIMIT]})
-    candidates = ingest.read_index(config)
+    candidates = nodes.read_index(config)
     plan = synthesize_clipping(
         meta,
         "",
@@ -118,7 +118,7 @@ def file_clip(
     # whatever the model returned.
     if not marks.person_anchors:
         plan.people = []
-    note_path = ingest.create_source_note(
+    note_path = nodes.create_source_note(
         config, meta, plan, marks=marks, full_body=clean
     )
 
@@ -128,16 +128,16 @@ def file_clip(
     source_title = ingest.safe_filename(display_title)
 
     # File named entities (tools, people) as their own leaf nodes.
-    entity_ids = ingest.file_entities(config, plan, source_title)
+    entity_ids = nodes.file_entities(config, plan, source_title)
 
     # Catalog the new source in the index (full line) and ensure each linked
     # concept has a stub line (insert-only — never clobber weave's richer
     # text). Log the build. Only for a freshly written source note.
     if note_path is not None:
-        ingest.upsert_index_line(config, source_title, plan.category, plan.description)
+        nodes.upsert_index_line(config, source_title, plan.category, plan.description)
         for topic in plan.topics:
-            ingest.upsert_index_line(config, topic, plan.category, "", insert_only=True)
-        ingest.append_log(
+            nodes.upsert_index_line(config, topic, plan.category, "", insert_only=True)
+        nodes.append_log(
             config,
             f"build sources/{note_path.name} "
             f"[{plan.category or 'uncategorized'}] "

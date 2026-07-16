@@ -6,7 +6,7 @@ Run: uv run python tests/test_ingest.py
 import tempfile
 from pathlib import Path
 
-from bower_bird import app, inbox, ingest
+from bower_bird import app, inbox, ingest, nodes, queues
 from bower_bird.config import Config
 from bower_bird.fetch import needs_clipping
 from bower_bird.marks import Marks, extract_marks, extract_urls, pick_source_url
@@ -60,14 +60,14 @@ def test_append_link_additive_and_idempotent() -> None:
             encoding="utf-8",
         )
 
-        ingest.append_link(cfg, note, "Some Source")
+        nodes.append_link(cfg, note, "Some Source")
         text = note.read_text(encoding="utf-8")
         check("My own prose." in text, "human prose preserved on append")
         check("- [[Some Source]]" in text, "link appended")
         check("## Links" in text, "Links heading created")
 
         # idempotent: second append does not duplicate
-        ingest.append_link(cfg, note, "Some Source")
+        nodes.append_link(cfg, note, "Some Source")
         text2 = note.read_text(encoding="utf-8")
         check(text2.count("- [[Some Source]]") == 1, "append is idempotent")
 
@@ -78,7 +78,7 @@ def test_telegram_inbox() -> None:
         root.mkdir()
         cfg = _config(root)
 
-        ingest.append_to_telegram_inbox(cfg, "random thought", reason="no link")
+        queues.append_to_telegram_inbox(cfg, "random thought", reason="no link")
         ib = cfg.telegram_inbox_path.read_text(encoding="utf-8")
         check("random thought" in ib, "telegram inbox captured the message")
         check("(no link)" in ib, "telegram inbox recorded the reason")
@@ -90,15 +90,15 @@ def test_clip_queue() -> None:
         root.mkdir()
         cfg = _config(root)
 
-        added = ingest.append_to_clip_queue(cfg, "https://x.com/a/status/1")
+        added = queues.append_to_clip_queue(cfg, "https://x.com/a/status/1")
         check(added is True, "first clip-queue add returns True")
-        dup = ingest.append_to_clip_queue(cfg, "https://x.com/a/status/1")
+        dup = queues.append_to_clip_queue(cfg, "https://x.com/a/status/1")
         check(dup is False, "duplicate clip-queue URL returns False")
         cq = cfg.to_clip_path.read_text(encoding="utf-8")
         check(cq.count("https://x.com/a/status/1") == 1, "url listed once")
         check("- [ ] https://x.com/a/status/1" in cq, "bare url checkbox when no title")
 
-        ingest.append_to_clip_queue(cfg, "https://x.com/b", title="A Tweet")
+        queues.append_to_clip_queue(cfg, "https://x.com/b", title="A Tweet")
         cq2 = cfg.to_clip_path.read_text(encoding="utf-8")
         check("- [ ] [A Tweet](https://x.com/b)" in cq2, "titled checkbox entry")
 
@@ -110,11 +110,11 @@ def test_tools_shelf() -> None:
         cfg = _config(root)
 
         url = "https://github.com/x/y"
-        added = ingest.append_to_tools(
+        added = queues.append_to_tools(
             cfg, url, "x/y", "A CLI tool", note="claude loop plugin"
         )
         check(added is True, "first tools add returns True")
-        dup = ingest.append_to_tools(cfg, url, "x/y", "A CLI tool")
+        dup = queues.append_to_tools(cfg, url, "x/y", "A CLI tool")
         check(dup is False, "duplicate tools URL returns False")
         ts = cfg.tools_path.read_text(encoding="utf-8")
         check(f"[x/y]({url})" in ts, "tool link stored")
@@ -143,7 +143,7 @@ def test_create_source_note_asserts_links() -> None:
         marks = Marks(
             highlights=["a kept passage"], further_links=[("Ref", "https://r.co")]
         )
-        path = ingest.create_source_note(
+        path = nodes.create_source_note(
             cfg,
             meta,
             plan,
@@ -187,7 +187,7 @@ def test_create_source_note_asserts_links() -> None:
         check("# Cache Invalidation" in concept_text, "new concept note has title")
 
         # filename-level dedup
-        again = ingest.create_source_note(cfg, meta, plan)
+        again = nodes.create_source_note(cfg, meta, plan)
         check(again is None, "duplicate source note returns None")
 
 
@@ -201,7 +201,7 @@ def test_links_into_existing_nested_concept() -> None:
         nested.parent.mkdir(parents=True)
         nested.write_text("---\ntitle: Verifiers\n---\n# Verifiers\n", encoding="utf-8")
 
-        resolved = ingest.find_concept_path(cfg, "Verifiers")
+        resolved = nodes.find_concept_path(cfg, "Verifiers")
         check(resolved == nested, "find_concept_path resolves into the nest")
 
         meta = PageMeta(
@@ -212,7 +212,7 @@ def test_links_into_existing_nested_concept() -> None:
             description="post",
             topics=["Verifiers"],
         )
-        ingest.create_source_note(cfg, meta, plan)
+        nodes.create_source_note(cfg, meta, plan)
         check(
             "[[RL Post]]" in nested.read_text(encoding="utf-8"),
             "link into nested concept",
@@ -320,7 +320,7 @@ def test_source_note_author_and_frozen() -> None:
             key_ideas=[],
         )
         marks = Marks(promote=True, frozen=True)
-        path = ingest.create_source_note(
+        path = nodes.create_source_note(
             cfg, meta, plan, marks=marks, full_body="full article body here"
         )
         text = path.read_text(encoding="utf-8")
@@ -341,7 +341,7 @@ def test_source_note_no_author_no_frozen_by_default() -> None:
         plan = ClippingPlan(
             concise_title="A", description="desc", category="x", topics=[], key_ideas=[]
         )
-        path = ingest.create_source_note(cfg, meta, plan, marks=Marks(), full_body="b")
+        path = nodes.create_source_note(cfg, meta, plan, marks=Marks(), full_body="b")
         text = path.read_text(encoding="utf-8")
         check("author:" not in text, "no author line when none known")
         check("frozen" not in text, "no frozen tag without the directive")
@@ -361,7 +361,7 @@ def test_source_link_divide() -> None:
         plan = ClippingPlan(
             concise_title="Post", description="d", topics=["Widgets"], key_ideas=[]
         )
-        ingest.create_source_note(cfg, meta, plan)
+        nodes.create_source_note(cfg, meta, plan)
         concept = (cfg.notes_dir / "Widgets.md").read_text(encoding="utf-8")
         check("## Sources" in concept, "concept has a Sources heading")
         check(
@@ -465,7 +465,7 @@ def test_index_upsert_add_update_idempotent() -> None:
         root.mkdir()
         cfg = _config(root)
 
-        ingest.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
+        nodes.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
         text = cfg.index_path.read_text(encoding="utf-8")
         check(
             "- [[Agentic loops]] · ai · how agents iterate" in text,
@@ -473,14 +473,14 @@ def test_index_upsert_add_update_idempotent() -> None:
         )
 
         # Second identical call is a no-op (no duplicate line).
-        ingest.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
+        nodes.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
         text = cfg.index_path.read_text(encoding="utf-8")
         check(
             text.count("[[Agentic loops]]") == 1, "identical upsert does not duplicate"
         )
 
         # Changing the payload replaces the line in place (still one line).
-        ingest.upsert_index_line(
+        nodes.upsert_index_line(
             cfg, "Agentic loops", "ai", "the agent iterate-verify loop"
         )
         text = cfg.index_path.read_text(encoding="utf-8")
@@ -489,7 +489,7 @@ def test_index_upsert_add_update_idempotent() -> None:
         check("how agents iterate" not in text, "old one-liner gone")
 
         # A title that is a prefix of an existing one is not clobbered.
-        ingest.upsert_index_line(cfg, "Agentic", "ai", "distinct shorter title")
+        nodes.upsert_index_line(cfg, "Agentic", "ai", "distinct shorter title")
         text = cfg.index_path.read_text(encoding="utf-8")
         check(text.count("[[Agentic loops]]") == 1, "prefix title left intact")
         check(
@@ -498,12 +498,12 @@ def test_index_upsert_add_update_idempotent() -> None:
         )
 
         # Empty category/one-liner degrades gracefully (no trailing separators).
-        ingest.upsert_index_line(cfg, "Bare", "", "")
+        nodes.upsert_index_line(cfg, "Bare", "", "")
         text = cfg.index_path.read_text(encoding="utf-8")
         check("- [[Bare]]\n" in text, "empty fields yield a clean bare line")
 
         # insert_only: never clobbers an existing (richer) line...
-        ingest.upsert_index_line(
+        nodes.upsert_index_line(
             cfg, "Agentic loops", "xx", "thin stub", insert_only=True
         )
         text = cfg.index_path.read_text(encoding="utf-8")
@@ -512,7 +512,7 @@ def test_index_upsert_add_update_idempotent() -> None:
             "insert_only leaves the existing richer line untouched",
         )
         # ...but does add a line when the title is absent.
-        ingest.upsert_index_line(cfg, "Brand New", "ai", "fresh stub", insert_only=True)
+        nodes.upsert_index_line(cfg, "Brand New", "ai", "fresh stub", insert_only=True)
         text = cfg.index_path.read_text(encoding="utf-8")
         check(
             "[[Brand New]] · ai · fresh stub" in text, "insert_only adds absent title"
@@ -524,8 +524,8 @@ def test_append_log() -> None:
         root = Path(d) / "BowerBird"
         root.mkdir()
         cfg = _config(root)
-        ingest.append_log(cfg, "built 2 pages")
-        ingest.append_log(cfg, "built 1 page")
+        nodes.append_log(cfg, "built 2 pages")
+        nodes.append_log(cfg, "built 1 page")
         text = cfg.log_path.read_text(encoding="utf-8")
         check(
             "built 2 pages" in text and "built 1 page" in text, "both log lines present"
@@ -564,8 +564,8 @@ def test_file_entities_creates_leaf_nodes() -> None:
                 )
             ],
         )
-        src = ingest.create_source_note(cfg, meta, plan)
-        ids = ingest.file_entities(cfg, plan, src.stem)
+        src = nodes.create_source_note(cfg, meta, plan)
+        ids = nodes.file_entities(cfg, plan, src.stem)
 
         tool = cfg.tools_dir / "roboflow-supervision.md"
         person = cfg.people_dir / "Piotr Skalski.md"
@@ -617,7 +617,7 @@ def test_source_note_frontmatter_is_injection_safe() -> None:
             topics=[],
             category="",
         )
-        path = ingest.create_source_note(cfg, meta, plan)
+        path = nodes.create_source_note(cfg, meta, plan)
         fm = path.read_text(encoding="utf-8").split("---")[1]
         # The payload survives harmlessly inside the quoted title value, but must
         # NOT become a standalone frontmatter key (that needs an un-collapsed

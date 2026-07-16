@@ -12,7 +12,7 @@ import sys
 import time
 from urllib.parse import urlparse
 
-from bower_bird import inbox, ingest, telegram
+from bower_bird import inbox, ingest, nodes, queues, telegram
 from bower_bird.config import Config
 from bower_bird.fetch import (
     fetch,
@@ -45,19 +45,19 @@ def finish_shelve(
 ) -> str:
     """Synthesize + write a source node, then catalog/log/receipt. Shared tail
     for every shelve-lane path (plain fetch, PDF, tweet, pasted prose)."""
-    candidates = ingest.read_index(config)
+    candidates = nodes.read_index(config)
     plan = synthesize_clipping(meta, note, candidates, model, config.llm)
-    path = ingest.create_source_note(config, meta, plan, note=note, full_body=full_body)
+    path = nodes.create_source_note(config, meta, plan, note=note, full_body=full_body)
     if meta.url:
         state.mark_url(meta.url)
     if path is None:
         return f"🔁 Already in brain — {truncate_title(plan.concise_title)}"
 
-    ingest.file_entities(config, plan, path.stem)
-    ingest.upsert_index_line(config, path.stem, plan.category, plan.description)
+    nodes.file_entities(config, plan, path.stem)
+    nodes.upsert_index_line(config, path.stem, plan.category, plan.description)
     for topic in plan.topics:
-        ingest.upsert_index_line(config, topic, plan.category, "", insert_only=True)
-    ingest.append_log(
+        nodes.upsert_index_line(config, topic, plan.category, "", insert_only=True)
+    nodes.append_log(
         config, f"build sources/{path.name} [{plan.category or 'uncategorized'}]"
     )
 
@@ -75,7 +75,7 @@ def shelve_link(config: Config, state: State, url: str, note: str) -> str:
         meta = fetch_pdf(url, timeout=config.fetch_timeout)
         if not meta.body_excerpt:
             # Unfetchable or scanned (no extractable text) — human's problem.
-            ingest.append_to_clip_queue(config, url)
+            queues.append_to_clip_queue(config, url)
             state.mark_url(url)
             return "✂️ Couldn't read that PDF — queued to clip"
         # PDF lane runs synthesize_clipping on Sonnet — Haiku thins out on
@@ -92,7 +92,7 @@ def shelve_link(config: Config, state: State, url: str, note: str) -> str:
     meta, body = fetch_rendered(url, timeout=config.fetch_timeout)
     if meta.is_thin:
         # Fetch came back empty (likely walled). Send it to the clip queue.
-        ingest.append_to_clip_queue(config, url, meta.title)
+        queues.append_to_clip_queue(config, url, meta.title)
         state.mark_url(url)
         return "✂️ Couldn't read that one — queued to clip"
 
@@ -170,7 +170,7 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
     """
     tweet = resolve_tweet(url, timeout=config.fetch_timeout)
     if tweet is None:
-        ingest.append_to_clip_queue(config, url)
+        queues.append_to_clip_queue(config, url)
         state.mark_url(url)
         return "✂️ Couldn't resolve that tweet — queued to clip"
 
@@ -222,7 +222,7 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
 
     if trivial_prose and not external_urls:
         # Content lives in an image, not text — a human has to look at it.
-        ingest.append_to_clip_queue(config, tweet.url)
+        queues.append_to_clip_queue(config, tweet.url)
         mark_tweet_urls()
         return "✂️ Media-only tweet — queued to clip"
 
@@ -250,7 +250,7 @@ def handle_update(config: Config, state: State, text: str, sender: str = "") -> 
 
     if parsed.lane is Lane.NO_LINK:
         # Nothing droppable — park it in the catch-all inbox, never discard.
-        ingest.append_to_telegram_inbox(config, text, reason="no link")
+        queues.append_to_telegram_inbox(config, text, reason="no link")
         return "🗃️ No link — parked in _inbox"
 
     if parsed.lane is Lane.PASTE:
@@ -266,7 +266,7 @@ def handle_update(config: Config, state: State, text: str, sender: str = "") -> 
         # A keep-for-later shelf item. Repos/tool pages fetch fine over httpx.
         meta = fetch(url, timeout=config.fetch_timeout)
         oneline = describe_link(meta, config.llm)
-        added = ingest.append_to_tools(
+        added = queues.append_to_tools(
             config, url, meta.title, oneline, note=parsed.note
         )
         state.mark_url(url)
