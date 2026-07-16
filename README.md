@@ -24,12 +24,11 @@ parts stay legible:
 - **Agent loop / lifecycle** — capture → gather → peck. Cron-driven, idempotent,
   resumable from durable state; no orchestration framework hiding the control
   flow.
-- **LLM-authored evals, LLM-as-judge grading** — at ingest, Haiku mints a
-  Feynman-style quiz (question + model answer) for each load-bearing concept via
-  structured output. The `peck` loop runs active recall against it: your typed
-  answer is graded **strong / weak / wrong** by an LLM judge with a one-line
-  rationale — you accept or override — and the grade drives a Leitner ladder.
-  A real eval loop, not self-assessment.
+- **LLM-authored evals, LLM-as-judge grading** — the `peck` loop generates a
+  fresh quiz question at recall time (depth scales with how well you know the
+  node), grades your typed answer **strong / weak / wrong** via an LLM judge
+  with a one-line rationale — you accept or override — and the grade drives a
+  Leitner ladder. A real eval loop, not self-assessment.
 - **Cost-tiered model routing** — per-item work runs on **Haiku** (cheap,
   cron-safe, structured output via `messages.parse`); whole-graph synthesis runs
   on a **larger model** through Claude Code. Cost shape decides the tier, not
@@ -111,16 +110,17 @@ A Zettelkasten split, not one flat pile:
 - **`brain/bowers/`** — permanent notes. Atomic, multi-source, where the
   thinking actually lives. Built by `weave`, never by ingest.
 
-Pipeline: **ingest** (shelve a source, draft key ideas) → **read** (recall via
-`peck`, highlight, dig) → **learn** (`weave` synthesizes across sources into
-`bowers/`).
+Pipeline: **ingest** (shelve a source, draft key ideas) → **read** (in
+Obsidian, at your leisure — highlight, `#dig`, ask questions in the margins) →
+**learn** (`peck` recall against the key ideas; `weave` synthesizes across
+sources into `bowers/`).
 
 ## Verbs and skills
 
 - **`bb lint`** — read-only structural graph lint: orphans, broken links.
-- **`bb peck`** — pull-only spaced-repetition recall session over due source
-  nodes; Leitner-scheduled, LLM-as-judge graded, teach-first (you get the
-  question before the answer).
+- **`bb peck`** — spaced-repetition recall session over due source nodes;
+  Leitner-scheduled, LLM-as-judge graded, teach-first (a never-quizzed node
+  shows you its key ideas before it ever quizzes you).
 - **`bb drain`** — retries the `to-clip.md` queue's unchecked X links through
   the resolver.
 - **`/forage`** (Claude Code skill) — outward web hunt from a gap signal or
@@ -141,7 +141,7 @@ Load-bearing invariants, enforced in code — not aspirations. Full text in
   a brain node immediately. Recall (`peck` + the LLM judge), not reading, is
   the learning event.
 - **Containment.** Owns one vault folder, touches nothing outside it; the folder
-  boundary is asserted in `ingest._assert_writable`.
+  boundary is asserted in `ingest.assert_writable`.
 - **Least blast radius.** Unattended work is least-privilege and non-destructive;
   high-stakes or untrusted-web actions are gated behind a deliberate human step.
 - **Nothing is lost.** Nothing is hard-deleted or dropped silently — processed
