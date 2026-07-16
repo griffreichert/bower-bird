@@ -20,7 +20,6 @@ from pathlib import Path
 
 from bower_bird import ingest
 from bower_bird.config import Config
-from bower_bird.fetch import PageMeta
 from bower_bird.llm import synthesize_clipping
 from bower_bird.marks import (
     extract_marks,
@@ -28,6 +27,7 @@ from bower_bird.marks import (
     pick_source_url,
     strip_directives,
 )
+from bower_bird.schema import PageMeta
 from bower_bird.state import State, content_hash
 
 _BODY_LIMIT = 6000

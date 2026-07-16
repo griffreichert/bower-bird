@@ -15,52 +15,10 @@ derives the JSON schema from it and validates the response back into the
 model.
 """
 
-from typing import Literal
-
 import anthropic
-from pydantic import BaseModel, ConfigDict, Field
 
 from bower_bird.config import LLMSettings
-from bower_bird.fetch import PageMeta
-from bower_bird.schema import ClippingPlan
-
-
-class JudgeVerdict(BaseModel):
-    """LLM-as-judge grade for one `peck` recall answer.
-
-    Grades the learner's typed answer against the node's key ideas (+ seed
-    thought) as ground truth, so the quiz loop is a real eval loop, not
-    self-assessment. The full node body is never sent — only the distilled
-    key ideas (#18).
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    grade: Literal["strong", "weak", "wrong"] = Field(
-        description="strong = captures the load-bearing idea, essentially "
-        "correct; weak = partially right but vague on or missing the core point; "
-        "wrong = incorrect, or a non-answer (blank / 'I don't know')."
-    )
-    rationale: str = Field(
-        description="One or two lines addressed to the learner: what they nailed "
-        "and what they missed. Grade the understanding, not the wording."
-    )
-
-
-class QuizQuestion(BaseModel):
-    """A freshly-generated `peck` question for one source node (#18).
-
-    Generated at quiz time (never stored) so a node's question doesn't
-    degrade into recognition after a few reps. Depth scales with the
-    learner's Leitner box — see `generate_question`.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    question: str = Field(
-        description="A single quiz question, box-appropriate depth, grounded "
-        "only in the supplied key ideas (+ seed thought / linked titles)."
-    )
+from bower_bird.schema import ClippingPlan, JudgeVerdict, PageMeta, QuizQuestion
 
 
 def key_ideas_block(key_ideas: list[str], seed: str) -> str:

@@ -13,9 +13,8 @@ import math
 import re
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict
-
 from bower_bird.fetch import follow_redirect, safe_get
+from bower_bird.schema import TweetText
 
 _TCO_URL_RE = re.compile(r"https://t\.co/\w+")
 
@@ -30,21 +29,6 @@ _STATUS_PATH_RE = re.compile(r"^/([^/]+)/status/(\d+)(?:/|$)")
 
 _SYNDICATION_FRAC_DIGITS = 12
 _BASE36_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
-
-
-class TweetText(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    url: str  # canonical: https://x.com/{handle}/status/{id}
-    author_handle: str  # screen_name, no @
-    author_name: str
-    text: str
-    quoted_handle: str = ""  # set when the tweet quotes another
-    quoted_text: str = ""
-    in_reply_to: str = ""  # screen_name this tweet replies to ("" if not a reply)
-    article_title: str = ""  # set when the tweet wraps a native X long-form Article
-    article_body: str = ""  # article content, rendered to markdown
 
 
 def parse_tweet_id(url: str) -> str | None:

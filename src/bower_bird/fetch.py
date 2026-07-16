@@ -13,8 +13,9 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 from markdownify import markdownify
-from pydantic import BaseModel, ConfigDict
 from pypdf import PdfReader
+
+from bower_bird.schema import PageMeta
 
 _UA = "Mozilla/5.0 (compatible; bower-bird/0.1; +https://github.com/)"
 _MAX_BODY_CHARS = 6000
@@ -131,23 +132,6 @@ def follow_redirect(url: str, timeout: float) -> str:
                 continue
             return current
     return url
-
-
-class PageMeta(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    url: str
-    title: str
-    description: str
-    body_excerpt: str  # only used by the learned lane
-    author: str = ""  # byline, when the page/clip exposes one
-
-    @property
-    def is_thin(self) -> bool:
-        """Fetch came back empty — no real title and no description. The page is
-        likely JS-/login-walled; route to the clip queue instead of writing a
-        broken inbox doc."""
-        return not self.description and (not self.title or self.title == self.url)
 
 
 def meta_content(soup: BeautifulSoup, *names: str) -> str:

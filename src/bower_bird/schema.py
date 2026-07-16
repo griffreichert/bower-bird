@@ -4,6 +4,7 @@ their own module — this file is contracts only.
 """
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,6 +26,48 @@ class Parsed(BaseModel):
     lane: Lane
     url: str | None
     note: str  # the user's surrounding note ("why") / seed thought / pasted text
+
+
+# --------------------------------------------------------------------------- #
+# fetch.py — page metadata (title/description/excerpt)
+# --------------------------------------------------------------------------- #
+
+
+class PageMeta(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    url: str
+    title: str
+    description: str
+    body_excerpt: str  # only used by the learned lane
+    author: str = ""  # byline, when the page/clip exposes one
+
+    @property
+    def is_thin(self) -> bool:
+        """Fetch came back empty — no real title and no description. The page is
+        likely JS-/login-walled; route to the clip queue instead of writing a
+        broken inbox doc."""
+        return not self.description and (not self.title or self.title == self.url)
+
+
+# --------------------------------------------------------------------------- #
+# resolve.py — a resolved tweet's text (+ reply hint / quote / article)
+# --------------------------------------------------------------------------- #
+
+
+class TweetText(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    url: str  # canonical: https://x.com/{handle}/status/{id}
+    author_handle: str  # screen_name, no @
+    author_name: str
+    text: str
+    quoted_handle: str = ""  # set when the tweet quotes another
+    quoted_text: str = ""
+    in_reply_to: str = ""  # screen_name this tweet replies to ("" if not a reply)
+    article_title: str = ""  # set when the tweet wraps a native X long-form Article
+    article_body: str = ""  # article content, rendered to markdown
 
 
 # --------------------------------------------------------------------------- #
@@ -133,4 +176,100 @@ class ClippingPlan(BaseModel):
         "(their mention text is supplied below). Resolve each to a full name and "
         "attach the profile URL from the supplied links. Do NOT add authors or "
         "other names the reader did not tag. [] when no #person tags are given.",
+    )
+
+
+# --------------------------------------------------------------------------- #
+# llm.py — generate_question / judge_answer structured output
+# --------------------------------------------------------------------------- #
+
+
+class QuizQuestion(BaseModel):
+    """A freshly-generated `peck` question for one source node (#18).
+
+    Generated at quiz time (never stored) so a node's question doesn't
+    degrade into recognition after a few reps. Depth scales with the
+    learner's Leitner box — see `llm.generate_question`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(
+        description="A single quiz question, box-appropriate depth, grounded "
+        "only in the supplied key ideas (+ seed thought / linked titles)."
+    )
+
+
+class JudgeVerdict(BaseModel):
+    """LLM-as-judge grade for one `peck` recall answer.
+
+    Grades the learner's typed answer against the node's key ideas (+ seed
+    thought) as ground truth, so the quiz loop is a real eval loop, not
+    self-assessment. The full node body is never sent — only the distilled
+    key ideas (#18).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    grade: Literal["strong", "weak", "wrong"] = Field(
+        description="strong = captures the load-bearing idea, essentially "
+        "correct; weak = partially right but vague on or missing the core point; "
+        "wrong = incorrect, or a non-answer (blank / 'I don't know')."
+    )
+    rationale: str = Field(
+        description="One or two lines addressed to the learner: what they nailed "
+        "and what they missed. Grade the understanding, not the wording."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# review.py — spaced-rep review state (ReviewStore, the stateful class, stays
+# in review.py; these are the frozen per-node/per-event data shapes it holds)
+# --------------------------------------------------------------------------- #
+
+
+class ReviewEntry(BaseModel):
+    """One past review event — stored in the history list."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reviewed_on: str = Field(description="ISO date of the review.")
+    grade: Literal["strong", "weak", "wrong"] = Field(
+        description="strong | weak | wrong."
+    )
+    box_before: int = Field(description="Box the node was in before this review.")
+    box_after: int = Field(description="Box it moved to after grading.")
+
+
+class Review(BaseModel):
+    """Per-node spaced-rep state, keyed by the source node's immutable id."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="Source node id — immutable, matches frontmatter id:.")
+    due: str = Field(
+        description="ISO date when next review is due (due <= today → quiz it)."
+    )
+    box: int = Field(
+        default=0,
+        description="Current Leitner box (0 = just minted / wrong, max = 5).",
+    )
+    last_grade: Literal["strong", "weak", "wrong"] | None = Field(
+        default=None,
+        description="Grade from the most recent review, or None if never reviewed.",
+    )
+    reviews: list[ReviewEntry] = Field(
+        default_factory=list,
+        description="Full grading history, oldest first. Empty = teach-first card.",
+    )
+    retired: bool = Field(
+        default=False,
+        description="Retired via the 'd' grading letter — excluded from due "
+        "forever, stays in the store/census.",
+    )
+    bad_streak: int = Field(
+        default=0,
+        description="Consecutive 'bad question' flags with no intervening real "
+        "grade. Reset to 0 by any real grade. >= BAD_STREAK_FLAG flags the "
+        "node's key ideas as thin (weave fodder).",
     )

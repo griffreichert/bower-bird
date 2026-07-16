@@ -29,9 +29,10 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from bower_bird.config import Config
+from bower_bird.schema import Review, ReviewEntry
 
 # ---------------------------------------------------------------------------
 # Leitner constants
@@ -48,56 +49,6 @@ SESSION_CAP = 10
 
 #: A bad_streak at or above this flags thin key ideas for weave fodder.
 BAD_STREAK_FLAG = 2
-
-
-# ---------------------------------------------------------------------------
-# Pydantic models
-# ---------------------------------------------------------------------------
-
-
-class ReviewEntry(BaseModel):
-    """One past review event — stored in the history list."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    reviewed_on: str = Field(description="ISO date of the review.")
-    grade: Grade = Field(description="strong | weak | wrong.")
-    box_before: int = Field(description="Box the node was in before this review.")
-    box_after: int = Field(description="Box it moved to after grading.")
-
-
-class Review(BaseModel):
-    """Per-node spaced-rep state, keyed by the source node's immutable id."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(description="Source node id — immutable, matches frontmatter id:.")
-    due: str = Field(
-        description="ISO date when next review is due (due <= today → quiz it)."
-    )
-    box: int = Field(
-        default=0,
-        description="Current Leitner box (0 = just minted / wrong, max = 5).",
-    )
-    last_grade: Grade | None = Field(
-        default=None,
-        description="Grade from the most recent review, or None if never reviewed.",
-    )
-    reviews: list[ReviewEntry] = Field(
-        default_factory=list,
-        description="Full grading history, oldest first. Empty = teach-first card.",
-    )
-    retired: bool = Field(
-        default=False,
-        description="Retired via the 'd' grading letter — excluded from due "
-        "forever, stays in the store/census.",
-    )
-    bad_streak: int = Field(
-        default=0,
-        description="Consecutive 'bad question' flags with no intervening real "
-        "grade. Reset to 0 by any real grade. >= BAD_STREAK_FLAG flags the "
-        "node's key ideas as thin (weave fodder).",
-    )
 
 
 # ---------------------------------------------------------------------------
