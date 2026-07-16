@@ -8,13 +8,13 @@
 
 ---
 
-A quiet knowledge-collation loop. Send a link to a Telegram bot from your phone;
-your laptop pulls it when awake, decides whether it's something to read later or
-something you've already read, and files it into your notes vault — with proposed
-links you accept or ignore.
+A quiet antilibrary. Send a link (or paste prose, or forward a tweet) to a
+Telegram bot from your phone; your laptop pulls it when awake and shelves it
+straight into your notes vault as a linked knowledge node — no queue to
+triage, no read gate first.
 
-The name fits the job: a bowerbird gathers found objects and curates them into a
-bower. Same here — found links, curated into a linked knowledge vault.
+The name fits the job: a bowerbird gathers found objects and curates them into
+a bower. Same here — found links, curated into a linked knowledge vault.
 
 ## What it demonstrates
 
@@ -40,37 +40,36 @@ parts stay legible:
 
 ## What it is (and isn't)
 
-- **Is:** the **`research` profile** — a quiet capture loop. Send a link →
-  captured → either queued to read or filed as a clipping with proposed
-  `[[backlinks]]` → a quiet daily digest.
+- **Is:** the **`research` profile** — an antilibrary. Every send is shelved
+  immediately into a linked knowledge graph; recall, not reading, is the
+  learning event.
 - **Isn't:** a coding agent. That's a separate `coding` profile, with its own
   repo, memory, permissions, and credentials. The two share only the Telegram
   front door. The split exists because the blast radius differs: coding needs
   repo-write, shell, and a real prompt-injection surface; research needs none of
   that.
 
-It **proposes, never asserts**: it drafts clippings and suggests links — you
-decide what to keep. It never summarises something you haven't read, and it stays
-quiet when there's nothing to surface.
+It **proposes, never asserts**: it drafts source nodes and suggests
+`[[backlinks]]` — you decide what to keep. It never invents claims from a
+source it didn't fetch, and it stays quiet when there's nothing to surface.
 
 ## What it does
 
-One bot, told apart by **how** you send:
+One bot, told apart by **what** you send — every lane shelves into
+`brain/sources/` as a full-text literature note (frontmatter, key ideas, the
+rendered body inlined below the fold). Nothing waits in a reading queue.
 
 | You send | Lane | What happens |
 | --- | --- | --- |
-| a bare link | **to-read** | rendered into a readable markdown doc in `inbox/` — you read and mark it there; moving it to `trinkets/` is the read signal |
-| a PDF link (`.pdf` path, or arXiv) | **learned** | a sent PDF counts as read — downloaded, text-extracted (`pypdf`), and filed straight into the graph |
-| an X/Twitter link | **tweet doc** | tweet text resolved (fxtwitter → syndication fallback) into its own doc in `tweets/` — move the keepers to `trinkets/`, the rest age out via the let-go sweep. Already read it on X? Add a note or just the word `read` and it skips the queue |
-| a link the bot can't read or resolve (login-walled) | **to-clip** | queued for a browser Web Clipper, then read + filed |
-| a link **+ a note**, or the word `read` anywhere | **learned** | a clipping is created with your note, plus **proposed** `[[backlinks]]` into your evergreen notes |
-| `tool:` **+ link** | **tools shelf** | appended to a keep-for-later shelf — pure recall, never enters the knowledge graph |
+| a bare link, or a link + a note | **shelve** | body fetched/rendered and shelved into `brain/sources/` — your note (if any) kept verbatim, key ideas drafted, `[[links]]` proposed into the concept graph |
+| an X/Twitter link | **tweet node** | tweet text resolved (fxtwitter → syndication fallback) into its own source node — one node per tweet. A native X Article behind the tweet shelves with its full body pulled from fxtwitter's article payload |
+| a link-wrapper tweet (a tweet that's just a link) | **routes to target** | the wrapped link is shelved instead of the tweet itself |
+| pasted prose, no link | **source node** | you're the author — the pasted text becomes the immutable body |
+| a PDF link (`.pdf` path, or arXiv) | **shelve via Sonnet** | downloaded, text-extracted (`pypdf`), shelved — the one lane that runs the paper-sized model instead of Haiku |
+| a link the bot can't read/resolve (login-walled, media-only) | **to-clip** | queued in `to-clip.md`; open in a browser, Web Clipper into `inbox/`, and it shelves on the next pull |
+| `tool:` **+ link** | **tools shelf** | appended to `tools.md` — pure recall, never enters the knowledge graph |
 
-Your one-line "why" is the highest-value input: it turns *note + source* into a
-linked evergreen note — proposed, for you to accept.
-
-Every send gets a one-glyph receipt back through the bot — 📥 inbox · 🧠 brain ·
-🐦 tweets · 🔧 tools · ✂️ to-clip · 🔁 already captured — so the outcome is
+Every send gets a one-glyph receipt back through the bot so the outcome is
 readable from the notification alone.
 
 ## How it works (no server)
@@ -79,28 +78,56 @@ Telegram's own servers hold the queue (~24h) until pulled — no webhook, no
 public host needed.
 
 ```
-phone ──link──▶ Telegram bot ──(queued ~24h)──▶ laptop pulls via getUpdates
-                                                   │  (cron, idempotent)
-                                        route ┌────┴────┐
-                                       to-read│         │ learned (note / read / PDF)
-                                              ▼         ▼
-                                       inbox/ doc   Haiku: source note          ┐
-                                              │     + proposed [[links]]        │ Tier 1
-                            you read, mark it,│         │                       │ (Haiku, per-item)
-                            move to trinkets/ │         │                       ┘
-                                              ▼         ▼
-                                          gather ──▶ brain/ knowledge graph
-                                                        │
-                                          ┌─────────────┴──────────────┐
-                                          ▼                            ▼
-                                 peck: recall quiz,          weave: whole-graph  ┐ Tier 2
-                                 LLM-as-judge grade,         synthesis + lint    │ (Claude Code,
-                                 Leitner scheduling          (you-triggered)     ┘  subscription)
+phone ──link/note──▶ Telegram bot ──(queued ~24h)──▶ laptop pulls via getUpdates
+                                                        │  (cron, idempotent)
+                                             route ┌────┴────┐
+                                                    ▼         ▼
+                                          shelve (Haiku)   to-clip.md (residue) ┐ Tier 1
+                                                    │         │ browser + Web    │ (Haiku, per-item)
+                                                    │         │ Clipper → inbox/ ┘
+                                                    ▼         ▼
+                                          brain/sources/ ◀── gather
+                                          (literature notes, full-text)
+                                                    │
+                                          ┌─────────┴──────────────┐
+                                          ▼                        ▼
+                                 peck: recall quiz,        weave: whole-graph  ┐ Tier 2
+                                 LLM-as-judge grade,       synthesis into      │ (Claude Code,
+                                 Leitner scheduling        brain/bowers/       ┘  subscription)
 ```
 
-Capture is instant; processing waits until the laptop is awake — fine for a
-reading queue. Pull daily (or also copy links to Telegram **Saved Messages** as
-a backstop) so nothing ages out of the 24h window.
+Capture is instant; processing waits until the laptop is awake — pull daily
+(or also copy links to Telegram **Saved Messages** as a backstop) so nothing
+ages out of the 24h window.
+
+## The graph: sources → bowers
+
+A Zettelkasten split, not one flat pile:
+
+- **`brain/sources/`** — literature notes. One per source, full text inlined
+  below the fold, plus drafted key ideas and your accumulating highlights. The
+  antilibrary itself: everything you've sent, whether or not you've read it
+  yet.
+- **`brain/bowers/`** — permanent notes. Atomic, multi-source, where the
+  thinking actually lives. Built by `weave`, never by ingest.
+
+Pipeline: **ingest** (shelve a source, draft key ideas) → **read** (recall via
+`peck`, highlight, dig) → **learn** (`weave` synthesizes across sources into
+`bowers/`).
+
+## Verbs and skills
+
+- **`bb lint`** — read-only structural graph lint: orphans, broken links.
+- **`bb peck`** — pull-only spaced-repetition recall session over due source
+  nodes; Leitner-scheduled, LLM-as-judge graded, teach-first (you get the
+  question before the answer).
+- **`bb drain`** — retries the `to-clip.md` queue's unchecked X links through
+  the resolver.
+- **`/forage`** (Claude Code skill) — outward web hunt from a gap signal or
+  topic; proposes reads, never writes to the vault.
+- **`weave`** (Tier-2, `make weave`) — the deep, subscription-side pass:
+  whole-graph synthesis into `brain/bowers/` plus lint, driven by the vault's
+  own `BowerBird/CLAUDE.md` playbook. You-triggered, never crond.
 
 ## Design principles
 
@@ -110,9 +137,9 @@ Load-bearing invariants, enforced in code — not aspirations. Full text in
 - **Enhance, never replace.** Your own reading, highlights, and writing are never
   erased or summarised away. The curated distillation may grow; your thinking is
   never clobbered — writes are additive only.
-- **Never distill the unread.** Only what you've actually read enters the graph.
-  Unread items get a pointer (title + one line), never a summary. The fluency
-  illusion — mistaking reading for understanding — is the enemy.
+- **Everything is shelved, nothing is gated.** No read gate: every send becomes
+  a brain node immediately. Recall (`peck` + the LLM judge), not reading, is
+  the learning event.
 - **Containment.** Owns one vault folder, touches nothing outside it; the folder
   boundary is asserted in `ingest._assert_writable`.
 - **Least blast radius.** Unattended work is least-privilege and non-destructive;
@@ -150,6 +177,7 @@ path:BowerBird/brain -path:"/_"
 
 ## Contributing
 
-Architecture rules, invariants, the vault write boundary, the code map, and the
-dev workflow live in [`CLAUDE.md`](CLAUDE.md). Built AI-assisted with Claude
-Code; commit history keeps the co-author trailers.
+Architecture rules, the capture model spec, the invariants, the vault write
+boundary, the code map, and the dev workflow live in
+[`CLAUDE.md`](CLAUDE.md). Built AI-assisted with Claude Code; commit history
+keeps the co-author trailers.
