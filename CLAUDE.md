@@ -137,16 +137,26 @@ PDF lane's `paper_model` (Sonnet), because Haiku thins out on dense papers.
 ```
 src/bower_bird/
   config.py    env + owned-folder (BowerBird/) paths + LLMSettings (frozen Config)
-  schema.py    pydantic data contracts (Lane/Parsed, ClippingPlan, EntityRef)
+  schema.py    pydantic data contracts (Lane/Parsed, PageMeta, TweetText,
+               ClippingPlan, EntityRef, QuizQuestion, JudgeVerdict, Review,
+               ReviewEntry)
   state.py     telegram offset + url + clip-hash dedup (idempotency)
   telegram.py  getUpdates pull + send receipt
   router.py    lane classification (tool: / shelve / paste / no_link)
   marks.py     reader marks pulled from a clip body (highlight/dig/question/links)
-  fetch.py     page metadata (title/description/excerpt)
-  llm.py       Anthropic calls: describe_link, synthesize_clipping (pydantic)
-  ingest.py    owned-folder writes (source nodes/to-clip/tools/_inbox), guarded
+  fetch.py     page metadata fetch (title/description/excerpt)
+  resolve.py   X/Twitter tweet text resolution via proxy chain
+  llm.py       Anthropic calls: describe_link, synthesize_clipping, peck's
+               generate_question/judge_answer (pydantic structured output)
+  ingest.py    vault-write boundary guard (assert_writable) + bits shared by
+               nodes.py/queues.py (safe_filename, yaml_scalar, format_tweet_body)
+  nodes.py     graph-node writes: source notes, leaf notes (people/tools),
+               [[links]], the _index.md catalog, the _log.md activity log
+  queues.py    flat-file shelf/queue appends: to-clip.md, tools.md, _inbox.md
   inbox.py     clipper inbox scan: clip -> source node + links -> archive
   app.py       pull orchestration (Telegram queue + clipper inbox)
+  review.py    spaced-rep ReviewStore + peck quiz loop (stateful; ShelfCensus
+               stays here too — its from_store() takes a ReviewStore)
   lint.py      read-only structural graph lint (orphans, broken links)
   __main__.py  `python -m bower_bird`
 tests/         router + ingest/inbox unit tests (pure logic, no network)
@@ -166,8 +176,9 @@ General rules live in the maintained skills (purge-slop, review-slop,
 pydantic-principles) — don't restate them here. Local conventions:
 
 - **Pydantic data contracts live in `schema.py`.** New/rewritten models land
-  there; pre-existing stragglers move in the post-#25 structure pass. Stateful
-  classes with behavior (e.g. `ReviewStore`) stay in their module.
+  there. Stateful classes with behavior (e.g. `ReviewStore`) stay in their
+  module; so does a model whose methods would pull a package import into
+  `schema.py` and create a cycle (e.g. `ShelfCensus`, bound to `ReviewStore`).
 - **`Config()` is the loader.** No wrapper loaders — validation and env
   handling (e.g. the ANTHROPIC_API_KEY launchd export) live inside the class
   via field validators and `model_post_init`.
@@ -177,7 +188,9 @@ pydantic-principles) — don't restate them here. Local conventions:
 - **Module-level functions are importable** — no `_` prefix outside classes;
   names say what the function does.
 - **Structure:** flat package by design at this size; don't add subpackages.
-  `ingest.py` splits after #25 lands, not before.
+  `ingest.py` split into `ingest.py` (boundary guard + shared bits) /
+  `nodes.py` (graph-node writers) / `queues.py` (flat-file shelf/queue
+  appenders) in the post-#25 structure pass (#28).
 
 ## Dev workflow
 
