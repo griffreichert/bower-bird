@@ -8,7 +8,12 @@ what it is, the no-server architecture, the capture model, and the roadmap — s
 
 **Antilibrary (2026-07-13, #12/#13/#22): every send is shelved into `brain/`
 immediately — no read gate, no reading rooms, no read keyword.** Recall
-(`peck`), not reading, is the learning event. Two capture entry points, both
+(`peck`), not reading, is the learning event. The layer split is Zettelkasten
+(decided 2026-07-16): `brain/sources/` are literature notes — one source, full
+text inlined below the fold (uniform rule, no size exception), detailed key
+ideas, accumulating reader highlights; `brain/bowers/` are permanent notes —
+atomic concepts, multi-source, where the thinking lives. Pipeline: ingest →
+read → learn. Two capture entry points, both
 landing in the owned `BowerBird/` folder:
 
 - **Telegram bot** (Tier-1 Haiku pull):

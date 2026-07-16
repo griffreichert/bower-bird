@@ -69,11 +69,13 @@ class ClippingPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     concise_title: str = Field(
+        max_length=64,
         description="A short, fluff-free title for this source — the graph node "
-        "label. Strip clickbait, subtitles, and '(And the N tricks...)' tails; "
-        "keep only the core subject, ideally 2-6 words (e.g. 'The Feynman "
-        "Method', not 'The Feynman Method: Why You Forget 90% of What You Read "
-        "(And the 4 Prompts That Fix It)'). Keep proper nouns intact."
+        "label. HARD RULE: 2-6 words. NEVER reuse the source's own title when "
+        "it is longer than that — compress it to the core subject (e.g. "
+        "'Agents need bash', not 'Long-running agents don't need tools or "
+        "hosted sandboxes; they need bash'). Strip clickbait, subtitles, and "
+        "'(And the N tricks...)' tails. Keep proper nouns intact.",
     )
     description: str = Field(
         description="One factual line: what this source is (type + topic)."
@@ -107,7 +109,10 @@ class ClippingPlan(BaseModel):
         description="3-6 standalone, testable CLAIMS distilled from this source "
         "— each one a reader could be quizzed on, e.g. 'self-attention replaces "
         "recurrence, buying parallelism', never a topic label like 'discusses "
-        "attention'. Weight your signal: clipper ==highlights== (what the reader "
+        "attention'. Make each claim DETAILED enough to relearn the idea "
+        "without reopening the source: include the mechanism, reasoning, or "
+        "numbers that make it stick, not just the headline. Weight your "
+        "signal: clipper ==highlights== (what the reader "
         "flagged) outrank a Telegram seed thought, which outranks the body read "
         "on its own terms. Draw ONLY from the supplied body/highlights/seed — "
         "never invented from prior knowledge of the topic. Scale to the source: "

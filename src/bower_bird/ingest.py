@@ -411,7 +411,9 @@ def create_source_note(
     config.sources_dir.mkdir(parents=True, exist_ok=True)
     # Prefer the model's fluff-free title for the graph node; fall back to the
     # raw page title if the model gave nothing.
-    display_title = (plan.concise_title or meta.title).strip() or meta.title
+    # 64-char clamp backstops the schema's max_length when the fallback is
+    # the raw page title (e.g. a long article headline).
+    display_title = ((plan.concise_title or meta.title).strip() or meta.title)[:64]
     source_title = safe_filename(display_title)
     path = config.sources_dir / f"{source_title}.md"
     assert_writable(config, path)
