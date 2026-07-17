@@ -8,6 +8,8 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
   drain            Resolve unchecked X links in to-clip.md into source nodes.
   lint             Read-only structural graph lint (orphans, broken links).
+  touch            Pull review due-dates to today for harvested nodes (weave's
+                    hook, #29).
 """
 
 import sys
@@ -77,6 +79,21 @@ def main() -> int:
         from bower_bird.lint import main as lint_main
 
         return lint_main(config)
+
+    if subcommand == "touch":
+        ids = args[1:]
+        if not ids:
+            print("bb touch: usage: bb touch <id> [<id>...]")
+            return 2
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.review import ReviewStore, touch
+
+        store = ReviewStore.load(config)
+        count = touch(store, ids)
+        print(f"bb touch: pulled {count} node(s) due to today.")
+        return 0
 
     if subcommand == "drain":
         from bower_bird.app import run_drain
