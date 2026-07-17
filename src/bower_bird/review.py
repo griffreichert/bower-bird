@@ -206,6 +206,36 @@ class ReviewStore:
 
 
 # ---------------------------------------------------------------------------
+# touch — weave's harvest due-pull hook (#29)
+# ---------------------------------------------------------------------------
+
+
+def touch(store: ReviewStore, ids: list[str]) -> int:
+    """Pull due dates forward to today for harvested nodes.
+
+    The highlight-harvest contract (#29): when weave appends new key ideas to
+    a source node, fresh material should get quizzed while warm. For each id
+    present in the store, sets ``due = min(due, today)`` — box, last_grade,
+    reviews, retired, and bad_streak are untouched (a retired node stays
+    retired; it's just excluded from due elsewhere). Unknown ids are printed
+    as a warning, not raised. Saves the store once. Returns the count of
+    nodes found in the store (and thus touched).
+    """
+    today = date.today().isoformat()
+    touched = 0
+    for node_id in ids:
+        review = store.get(node_id)
+        if review is None:
+            print(f"touch: unknown source id {node_id!r} — skipped.")
+            continue
+        if today < review.due:
+            store._entries[node_id] = review.model_copy(update={"due": today})
+        touched += 1
+    store.save()
+    return touched
+
+
+# ---------------------------------------------------------------------------
 # ShelfCensus — one bucket model, rendered identically everywhere (#20)
 # ---------------------------------------------------------------------------
 
