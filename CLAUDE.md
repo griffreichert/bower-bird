@@ -56,9 +56,14 @@ landing in the owned `BowerBird/` folder:
   `fetch`), writes the source node, moves the original to `archive/`. Never a
   queue; nothing waits in `inbox/` for a human step.
 
-**Distillation is one-shot, at ingest.** `synthesize_clipping` runs once per
-capture; marks added later never re-distill — `weave` owns distillation-layer
-refresh. Key ideas are 3–6 standalone testable claims, graded by signal:
+**Distillation is first-shot at ingest, deepened by reading (#29).**
+`synthesize_clipping` runs once per capture; marks added while reading later
+are harvested by `weave` (the highlight-harvest contract, issue #29): new
+claims are **appended** to the source's key ideas — strict append-only,
+provenance-marked, existing bullets never rewritten — and the node's review
+due date is pulled to today (box untouched). A highlight raises that source's
+vote *weight* toward concept synthesis, never the vote *count*.
+Key ideas are 3–6 standalone testable claims, graded by signal:
 clipper `==highlights==` > Telegram seed thought > body on its own terms;
 archetype-adaptive (rich essay → several claims; single-claim tweet → one thin
 one; link-list → few/none, outbound links harvested). Concept notes get bare
