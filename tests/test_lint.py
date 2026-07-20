@@ -162,12 +162,115 @@ def test_aliased_link_resolves() -> None:
         )
 
 
+def test_topics_matching_links_is_clean() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        sources = root / "brain" / "sources"
+        sources.mkdir(parents=True)
+        (sources / "S.md").write_text(
+            '---\ntitle: "S"\nid: id-s\ntopics:\n  - Concept\n---\n'
+            "# S\n\n## Links\n- [[Concept]]\n",
+            encoding="utf-8",
+        )
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            not findings.topic_drift,
+            f"matching topics is clean, got: {findings.topic_drift}",
+        )
+
+
+def test_topics_diverging_from_links_detected() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        sources = root / "brain" / "sources"
+        sources.mkdir(parents=True)
+        (sources / "S.md").write_text(
+            '---\ntitle: "S"\nid: id-s\ntopics:\n  - Stale Topic\n---\n'
+            "# S\n\n## Links\n- [[Concept]]\n",
+            encoding="utf-8",
+        )
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            any("S.md" in f for f in findings.topic_drift),
+            f"diverging topics flagged, got: {findings.topic_drift}",
+        )
+
+
+def test_missing_topics_key_is_not_a_finding() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        sources = root / "brain" / "sources"
+        sources.mkdir(parents=True)
+        (sources / "S.md").write_text(
+            '---\ntitle: "S"\nid: id-s\n---\n# S\n\n## Links\n- [[Concept]]\n',
+            encoding="utf-8",
+        )
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            not findings.topic_drift,
+            "pre-backfill node without topics is not a finding",
+        )
+
+
+def test_category_matching_index_is_clean() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        sources = root / "brain" / "sources"
+        sources.mkdir(parents=True)
+        (sources / "S.md").write_text(
+            '---\ntitle: "S"\nid: id-s\ncategory: ai\n---\n# S\n\n## Links\n',
+            encoding="utf-8",
+        )
+        (root / "brain" / "_index.md").write_text(
+            "- [[S]] · ai · a source\n", encoding="utf-8"
+        )
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            not findings.category_drift,
+            f"matching category is clean, got: {findings.category_drift}",
+        )
+
+
+def test_category_diverging_from_index_detected() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        sources = root / "brain" / "sources"
+        sources.mkdir(parents=True)
+        (sources / "S.md").write_text(
+            '---\ntitle: "S"\nid: id-s\ncategory: ai\n---\n# S\n\n## Links\n',
+            encoding="utf-8",
+        )
+        (root / "brain" / "_index.md").write_text(
+            "- [[S]] · productivity · a source\n", encoding="utf-8"
+        )
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            any("S.md" in f for f in findings.category_drift),
+            f"diverging category flagged, got: {findings.category_drift}",
+        )
+
+
 if __name__ == "__main__":
     test_clean_vault_returns_zero()
     test_orphan_review_entry_detected()
     test_orphan_node_detected()
     test_broken_link_detected()
     test_aliased_link_resolves()
+    test_topics_matching_links_is_clean()
+    test_topics_diverging_from_links_detected()
+    test_missing_topics_key_is_not_a_finding()
+    test_category_matching_index_is_clean()
+    test_category_diverging_from_index_detected()
 
     if _failures:
         print(f"\n{_failures} test(s) failed.")
