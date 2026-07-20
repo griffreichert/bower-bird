@@ -177,7 +177,7 @@ id: {source_id}
 title: "{title}"
 source: "{url}"
 {author_line}created: {today}
-tags:
+{category_line}{topics_block}tags:
 {tags}
 ---
 # {title}
@@ -232,6 +232,11 @@ def create_source_note(
 
     targets = list(plan.topics)
 
+    category_line = f"category: {plan.category}\n" if plan.category else ""
+    topics_block = (
+        "topics:\n" + "\n".join(f"  - {t}" for t in targets) + "\n" if targets else ""
+    )
+
     backlinks = (
         "\n".join(f"- [[{t}]]" for t in targets)
         if targets
@@ -253,6 +258,8 @@ def create_source_note(
             url=yaml_scalar(meta.url),
             author_line=author_line,
             today=today_iso(),
+            category_line=category_line,
+            topics_block=topics_block,
             tags=build_source_tags(marks),
         ),
     ]

@@ -156,6 +156,24 @@ def test_create_source_note_asserts_links() -> None:
         src = path.read_text(encoding="utf-8")
         has_links = "[[Caching]]" in src and "[[Cache Invalidation]]" in src
         check(has_links, "links in source")
+        check("category:" not in src, "no category line when plan.category is empty")
+        fm = src.split("---")[1]
+        check("topics:" in fm, "topics: block present when targets non-empty")
+        topics_block = fm.split("topics:", 1)[1].split("tags:", 1)[0]
+        fm_topics = [
+            ln.strip().removeprefix("- ")
+            for ln in topics_block.splitlines()
+            if ln.strip().startswith("- ")
+        ]
+        link_targets = [
+            ln.removeprefix("- [[").removesuffix("]]")
+            for ln in src.split("## Links", 1)[1].splitlines()
+            if ln.startswith("- [[")
+        ]
+        check(
+            fm_topics == link_targets == ["Caching", "Cache Invalidation"],
+            "frontmatter topics equal ## Links targets, same list",
+        )
         check(
             "## Seed thoughts\n- why it matters" in src,
             "seed thought stored verbatim as a bullet",
@@ -325,6 +343,8 @@ def test_source_note_author_and_frozen() -> None:
         )
         text = path.read_text(encoding="utf-8")
         check('author: "Jerry Liu"' in text, "author byline written to frontmatter")
+        check("category: ai" in text, "category line written when plan.category set")
+        check("topics:" not in text, "no topics block when plan.topics is empty")
         check("  - frozen" in text, "#promote/#frozen adds the frozen tag")
         check("## Body" in text, "full body section written")
         check("full article body here" in text, "full body content present")
