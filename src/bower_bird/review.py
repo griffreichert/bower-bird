@@ -14,9 +14,10 @@ Unit = one card per source node (#18). A node enrols the first time it's seen
 due (``sync_sources``) rather than at ingest time — no ingest-side coupling.
 The stored Feynman payload is dead: questions are generated fresh at quiz
 time from the node's ``## Key ideas`` (+ ``## Seed thoughts``), depth
-scaled to the Leitner box. A never-reviewed node (empty history) is a
-teach-first card: key ideas are shown, no question/judge/grade, due bumps to
-tomorrow.
+scaled to the Leitner box. A never-seen node is a teach-first card
+(``Review.is_teach``): key ideas are shown, no question/judge/grade, due bumps
+to tomorrow and ``taught`` is set — so the card graduates to a real quiz the
+next session instead of teaching forever.
 
 ``peck`` is pull-only: it is never called from the cron pass.
 """
@@ -118,6 +119,19 @@ class ReviewStore:
                 added.append(node_id)
         return added
 
+    def prune_orphans(self, config: Config) -> list[str]:
+        """Drop entries whose source node no longer exists in brain/sources/.
+
+        A deleted source file leaves a dead id in the store that peck skips as
+        'node not found' — noise on screen, and it wastes one of the session's
+        capped slots. Returns the removed ids (caller saves).
+        """
+        live = set(scan_sources(config))
+        dead = [node_id for node_id in self._entries if node_id not in live]
+        for node_id in dead:
+            del self._entries[node_id]
+        return dead
+
     # -- querying ------------------------------------------------------------
 
     def due_today(self, today: date | None = None) -> list[Review]:
@@ -134,8 +148,8 @@ class ReviewStore:
         """Due nodes for one peck session: real reviews before teach cards,
         oldest-due-first within each group, capped at ``cap``."""
         due = sorted(self.due_today(today), key=lambda r: r.due)
-        real = [r for r in due if r.reviews]
-        teach = [r for r in due if not r.reviews]
+        real = [r for r in due if not r.is_teach]
+        teach = [r for r in due if r.is_teach]
         return (real + teach)[:cap]
 
     # -- grading -------------------------------------------------------------
@@ -181,11 +195,12 @@ class ReviewStore:
 
     def teach(self, node_id: str, today: date | None = None) -> Review:
         """Teach-first completion: no question/judge/grade — due bumps to
-        tomorrow, box + history + bad_streak untouched."""
+        tomorrow, ``taught`` set so the card quizzes next session; box +
+        history + bad_streak untouched."""
         review = self._entries[node_id]
         pivot = today or date.today()
         updated = review.model_copy(
-            update={"due": (pivot + timedelta(days=1)).isoformat()}
+            update={"due": (pivot + timedelta(days=1)).isoformat(), "taught": True}
         )
         self._entries[node_id] = updated
         return updated
@@ -515,7 +530,7 @@ def peck(config: Config) -> int:
         print(f"  Box:   {review.box}  |  Due: {review.due}")
         print(f"{'─' * 60}")
 
-        if not review.reviews:  # teach-first
+        if review.is_teach:  # teach-first
             render_key_ideas(node)
             updated = store.teach(review.id)
             store.save()
@@ -612,7 +627,7 @@ def list_due(config: Config) -> int:
         node = sources.get(review.id)
         if node is None:
             continue
-        is_teach = not review.reviews
+        is_teach = review.is_teach
         entry = {
             "id": review.id,
             "title": node.title,
@@ -694,12 +709,26 @@ def grade(config: Config, node_id: str, raw_grade: str) -> int:
     return 0
 
 
+def prune_reviews(config: Config) -> int:
+    """Remove review entries whose source node is gone — the ``--prune`` half."""
+    store = ReviewStore.load(config)
+    removed = store.prune_orphans(config)
+    if removed:
+        store.save()
+    noun = "entry" if len(removed) == 1 else "entries"
+    print(f"peck: pruned {len(removed)} orphan review {noun}.")
+    print(ShelfCensus.from_store(store).render())
+    return 0
+
+
 def main(config: Config, argv: list[str] | None = None) -> int:
-    """Entry point for `peck [--list-due|--grade <id> <action>]` (else interactive)."""
+    """Entry: `peck [--list-due|--prune|--grade <id> <action>]` (else interactive)."""
     argv = argv or []
     try:
         if argv and argv[0] == "--list-due":
             return list_due(config)
+        if argv and argv[0] == "--prune":
+            return prune_reviews(config)
         if argv and argv[0] == "--grade":
             if len(argv) != 3:
                 print(
