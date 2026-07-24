@@ -139,7 +139,7 @@ sources into `bowers/`).
 ## Design principles
 
 Load-bearing invariants, enforced in code — not aspirations. Full text in
-[`notes/INVARIANTS.md`](notes/INVARIANTS.md).
+[`INVARIANTS.md`](INVARIANTS.md).
 
 - **Enhance, never replace.** Your own reading, highlights, and writing are never
   erased or summarised away. The curated distillation may grow; your thinking is
