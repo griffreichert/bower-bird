@@ -6,6 +6,10 @@
 
 <p align="center"><em>Hatch a bowerbird to collect shiny bits of knowledge as you learn.</em></p>
 
+<p align="center">
+  <a href="https://github.com/griffreichert/bower-bird/actions/workflows/ci.yml"><img src="https://github.com/griffreichert/bower-bird/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
 <!-- demo: uncomment once assets/demo.gif is recorded (see scripts/demo-record.sh) -->
 <!--
 <p align="center">
