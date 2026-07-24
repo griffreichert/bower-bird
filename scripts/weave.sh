@@ -52,4 +52,6 @@ fi
 
 # ponytail: prompt finalized in Phase 2 alongside the weave/lint playbook rewrite
 # in BowerBird/CLAUDE.md. For now it points Claude Code at that playbook.
-exec claude -p "$PROMPT"
+# WEAVE_MODEL pins the model (e.g. WEAVE_MODEL=opus) — the saved default may be
+# a pricier tier than a long headless grind deserves.
+exec claude ${WEAVE_MODEL:+--model "$WEAVE_MODEL"} -p "$PROMPT"
