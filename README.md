@@ -6,6 +6,13 @@
 
 <p align="center"><em>Hatch a bowerbird to collect shiny bits of knowledge as you learn.</em></p>
 
+<!-- demo: uncomment once assets/demo.gif is recorded (see scripts/demo-record.sh) -->
+<!--
+<p align="center">
+  <img src="assets/demo.gif" alt="bower-bird demo: capture → note lands → peck (LLM-as-judge)" width="720">
+</p>
+-->
+
 ---
 
 A quiet antilibrary. Send a link (or paste prose, or forward a tweet) to a
