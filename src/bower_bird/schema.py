@@ -260,7 +260,13 @@ class Review(BaseModel):
     )
     reviews: list[ReviewEntry] = Field(
         default_factory=list,
-        description="Full grading history, oldest first. Empty = teach-first card.",
+        description="Full grading history, oldest first.",
+    )
+    taught: bool = Field(
+        default=False,
+        description="True once the teach-first card has been shown at least "
+        "once. Graduates the card out of teach so it quizzes next session, "
+        "even before it has a graded review.",
     )
     retired: bool = Field(
         default=False,
@@ -273,3 +279,9 @@ class Review(BaseModel):
         "grade. Reset to 0 by any real grade. >= BAD_STREAK_FLAG flags the "
         "node's key ideas as thin (weave fodder).",
     )
+
+    @property
+    def is_teach(self) -> bool:
+        """Teach-first card: show key ideas, no question/judge/grade. True until
+        the card has been taught once (``taught``) or graded (``reviews``)."""
+        return not self.reviews and not self.taught

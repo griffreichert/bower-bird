@@ -311,6 +311,24 @@ def test_sync_sources_idempotent() -> None:
         check(store.get("src-1").box == 1, "graded state untouched by re-sync")  # type: ignore[union-attr]
 
 
+def test_prune_orphans_drops_entries_for_deleted_sources() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        _write_source(root, "live-1", title="Live One")
+
+        store = ReviewStore.load(cfg)
+        store.sync_sources(cfg)  # enrols live-1
+        store.seed("dead-1")  # a review entry with no matching source file
+        store.seed("dead-2")
+
+        removed = store.prune_orphans(cfg)
+        check(set(removed) == {"dead-1", "dead-2"}, f"both orphans removed: {removed}")
+        check(store.get("live-1") is not None, "live source kept")
+        check(store.get("dead-1") is None, "orphan entry gone")
+
+
 def test_scan_sources_parses_key_ideas_seed_links() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "BowerBird"
@@ -368,10 +386,32 @@ def test_teach_bumps_due_tomorrow_keeps_box() -> None:
         updated = store.teach("abc", today=today)
         check(updated.box == 0, "teach leaves box at 0")
         check(updated.reviews == [], "teach adds no history entry")
+        check(updated.taught, "teach sets the taught flag")
         check(
             updated.due == (today + timedelta(days=1)).isoformat(),
             f"teach bumps due to tomorrow: {updated.due}",
         )
+
+
+def test_taught_card_graduates_to_quiz_next_session() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        root.mkdir()
+        cfg = _config(root)
+        store = ReviewStore.load(cfg)
+        store.seed("abc")
+        today = date(2026, 6, 25)
+        check(store.get("abc").is_teach, "fresh card is teach-first")  # type: ignore[union-attr]
+        store.teach("abc", today=today)
+        graduated = store.get("abc")
+        check(
+            graduated is not None and not graduated.is_teach,
+            "taught card no longer teach",
+        )
+        # tomorrow it's due again and now sorts as a real (quiz) card
+        session = store.session(today=today + timedelta(days=1))
+        check([r.id for r in session] == ["abc"], "taught card is due next day")
+        check(not session[0].is_teach, "and surfaces as a quiz, not a teach card")
 
 
 def test_session_orders_real_reviews_before_teach_cards() -> None:
@@ -650,9 +690,11 @@ if __name__ == "__main__":
     test_store_file_is_valid_json_after_save()
     test_sync_sources_enrols_new_nodes()
     test_sync_sources_idempotent()
+    test_prune_orphans_drops_entries_for_deleted_sources()
     test_scan_sources_parses_key_ideas_seed_links()
     test_scan_sources_skips_nodes_without_id()
     test_teach_bumps_due_tomorrow_keeps_box()
+    test_taught_card_graduates_to_quiz_next_session()
     test_session_orders_real_reviews_before_teach_cards()
     test_session_caps_at_ten()
     test_session_oldest_due_first_within_group()

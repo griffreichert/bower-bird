@@ -31,13 +31,14 @@ node's key ideas.
 
 2. **For each node, branch on `mode`:**
 
-   - **`mode: "teach"`** (a node never quizzed before — empty review history).
-     No question, no grading. Show the `title` and `key_ideas` (+ `seed` if
-     present) so the user reads them, then write it back immediately:
+   - **`mode: "teach"`** (a node never taught yet). No question, no grading.
+     Show the `title` and `key_ideas` (+ `seed` if present) so the user reads
+     them, then write it back immediately:
      ```bash
      uv run python -m bower_bird peck --grade <id> teach
      ```
-     This bumps `due` to tomorrow; box stays 0. Move to the next node.
+     This bumps `due` to tomorrow and marks the card taught; box stays 0. It
+     graduates to a real quiz next session. Move to the next node.
 
    - **`mode: "quiz"`.** Write ONE question yourself, grounded only in
      `key_ideas` (+ `seed`) — never invent from outside them. Depth scales
