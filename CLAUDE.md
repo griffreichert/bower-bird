@@ -86,7 +86,7 @@ questions`), and outbound `[text](url)` links (→ `## Further reading`).
 ## Invariants (must always hold)
 
 Load-bearing. Don't regress them. Full text:
-[`notes/INVARIANTS.md`](notes/INVARIANTS.md).
+[`INVARIANTS.md`](INVARIANTS.md).
 
 - **Research profile only.** Never gets push or merge permissions — that
   belongs to the separate `coding` profile.
