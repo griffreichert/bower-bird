@@ -8,6 +8,7 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
   drain            Resolve unchecked X links in to-clip.md into source nodes.
   lint             Read-only structural graph lint (orphans, broken links).
+  stale            Ranked weave queue: which concept to synthesize next.
   ask              Ranked claim recall over the graph (read-only, no LLM).
   touch            Pull review due-dates to today for harvested nodes (weave's
                     hook, #29).
@@ -80,6 +81,19 @@ def main() -> int:
         from bower_bird.lint import main as lint_main
 
         return lint_main(config)
+
+    if subcommand == "stale":
+        rest = args[1:]
+        limit = 20
+        if "--limit" in rest:
+            i = rest.index("--limit")
+            limit = int(rest[i + 1])
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.stale import main as stale_main
+
+        return stale_main(config, limit=limit)
 
     if subcommand == "ask":
         rest = args[1:]
