@@ -45,7 +45,7 @@ def finish_shelve(
 ) -> str:
     """Synthesize + write a source node, then catalog/log/receipt. Shared tail
     for every shelve-lane path (plain fetch, PDF, tweet, pasted prose)."""
-    candidates = nodes.read_index(config)
+    candidates = nodes.candidate_index(config, config.llm.topic_candidate_limit)
     plan = synthesize_clipping(meta, note, candidates, model, config.llm)
     path = nodes.create_source_note(config, meta, plan, note=note, full_body=full_body)
     if meta.url:
