@@ -8,6 +8,7 @@ stays in `ingest.py`; this module never bypasses it).
 
 import re
 import uuid
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -153,6 +154,48 @@ def upsert_index_line(
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+_CANDIDATE_INDEX_LINE_RE = re.compile(
+    r"^- \[\[([^\]]+)\]\](?: · ([^·\n]*))?", re.MULTILINE
+)
+_CANDIDATE_WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
+
+
+def feeding_source_counts(config: Config) -> Counter[str]:
+    """Per concept title, how many distinct `brain/sources/*.md` notes
+    wikilink to it. A concept is any title with a note under `brain/bowers/`
+    — this count is the ranking signal for `candidate_index` (#Step 4b)."""
+    counts: Counter[str] = Counter()
+    if not config.sources_dir.is_dir() or not config.notes_dir.is_dir():
+        return counts
+    concept_stems = {p.stem for p in config.notes_dir.rglob("*.md")}
+    for path in sorted(config.sources_dir.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        targets = {m.group(1).strip() for m in _CANDIDATE_WIKILINK_RE.finditer(text)}
+        counts.update(targets & concept_stems)
+    return counts
+
+
+def candidate_index(config: Config, limit: int) -> str:
+    """The link-candidate list `synthesize_clipping` sees: the top `limit`
+    concept titles by feeding-source count, not the whole `_index.md`.
+
+    With every concept as a candidate (~320 on the live vault), the "prefer an
+    existing title" instruction doesn't survive the list length and Haiku
+    coins new ones instead — 221 singleton topics, measured 2026-07-25.
+    Capping to the most-fed concepts keeps the preferred targets few enough
+    that Haiku actually reuses them.
+    """
+    full_text = read_index(config)
+    if not full_text.strip():
+        return full_text
+    categories = dict(_CANDIDATE_INDEX_LINE_RE.findall(full_text))
+    lines = []
+    for title, _count in feeding_source_counts(config).most_common(limit):
+        category = (categories.get(title) or "").strip()
+        lines.append(f"- [[{title}]] · {category}".rstrip(" ·"))
+    return "\n".join(lines)
 
 
 def append_log(config: Config, message: str) -> None:

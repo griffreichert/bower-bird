@@ -71,6 +71,16 @@ class LLMSettings(BaseModel):
     question_max_tokens: int = Field(
         default=200, gt=0, description="Cap for generate_question's quiz question."
     )
+    topic_candidate_limit: int = Field(
+        default=60,
+        gt=0,
+        description="Max concept titles synthesize_clipping sees as link "
+        "candidates, ranked by feeding-source count. The full ~320-title "
+        "index buries the 'prefer an existing title' instruction and Haiku "
+        "coins new ones instead (measured: 221 singleton topics) — capping "
+        "to the most-fed concepts keeps the preferred targets small enough "
+        "to matter.",
+    )
 
 
 class Config(BaseSettings):
