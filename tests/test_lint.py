@@ -260,6 +260,123 @@ def test_category_diverging_from_index_detected() -> None:
         )
 
 
+def _concept(root: Path, name: str, block: str = "") -> None:
+    bowers = root / "brain" / "bowers"
+    bowers.mkdir(parents=True, exist_ok=True)
+    (bowers / f"{name}.md").write_text(
+        f'---\ntitle: "{name}"\nid: id-{name.lower()}\n---\n# {name}\n\n{block}',
+        encoding="utf-8",
+    )
+
+
+def _feeding_sources(root: Path, target: str, count: int, start: int = 0) -> None:
+    sources = root / "brain" / "sources"
+    sources.mkdir(parents=True, exist_ok=True)
+    for i in range(start, start + count):
+        (sources / f"src{i}.md").write_text(
+            f'---\ntitle: "src{i}"\nid: id-src{i}\n---\n'
+            f"# src{i}\n\n## Links\n- [[{target}]]\n",
+            encoding="utf-8",
+        )
+
+
+def test_under_cited_synthesis_detected() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        # Block cites 1 wikilink inside it, but 2 sources feed the concept.
+        _concept(
+            root,
+            "Thin",
+            "<!-- bower:concept -->\n[[OnlyOne]]\n<!-- /bower:concept -->\n",
+        )
+        _feeding_sources(root, "Thin", 2)
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            any("Thin.md" in f for f in findings.under_cited_synthesis),
+            f"under-cited block flagged, got: {findings.under_cited_synthesis}",
+        )
+
+
+def test_well_cited_synthesis_is_clean() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        _concept(
+            root,
+            "Rich",
+            "<!-- bower:concept -->\n[[One]] and [[Two]]\n<!-- /bower:concept -->\n",
+        )
+        _feeding_sources(root, "Rich", 2)
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            not findings.under_cited_synthesis,
+            f"2+ citations inside block is clean, "
+            f"got: {findings.under_cited_synthesis}",
+        )
+
+
+def test_earned_but_unsynthesized_detected() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        _concept(root, "Earned")  # no synthesis block at all
+        _feeding_sources(root, "Earned", 3)
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            any("Earned.md" in f for f in findings.earned_unsynthesized),
+            f"3+ inbound sources with no block flagged, "
+            f"got: {findings.earned_unsynthesized}",
+        )
+
+
+def test_single_source_concept_is_not_a_finding() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        # 1 feeding source, no block: too young to have earned anything.
+        _concept(root, "Young")
+        _feeding_sources(root, "Young", 1)
+        # 1 feeding source, under-cited block: also too young to flag.
+        _concept(
+            root,
+            "YoungWithBlock",
+            "<!-- bower:concept -->\nno citations\n<!-- /bower:concept -->\n",
+        )
+        _feeding_sources(root, "YoungWithBlock", 1, start=1)
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            not findings.earned_unsynthesized,
+            f"1-source concept is not an earned-unsynthesized finding, "
+            f"got: {findings.earned_unsynthesized}",
+        )
+        check(
+            not findings.under_cited_synthesis,
+            f"1-source concept with a block is not an under-cited finding, "
+            f"got: {findings.under_cited_synthesis}",
+        )
+
+
+def test_two_sources_with_no_block_is_not_earned() -> None:
+    # >=3 is the earned threshold; 2 is not enough.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        _concept(root, "TwoSources")
+        _feeding_sources(root, "TwoSources", 2)
+
+        cfg = _config(root)
+        findings, _, _ = run_lint(cfg)
+        check(
+            not findings.earned_unsynthesized,
+            f"2-source concept with no block is not earned-unsynthesized yet, "
+            f"got: {findings.earned_unsynthesized}",
+        )
+
+
 if __name__ == "__main__":
     test_clean_vault_returns_zero()
     test_orphan_review_entry_detected()
@@ -271,6 +388,11 @@ if __name__ == "__main__":
     test_missing_topics_key_is_not_a_finding()
     test_category_matching_index_is_clean()
     test_category_diverging_from_index_detected()
+    test_under_cited_synthesis_detected()
+    test_well_cited_synthesis_is_clean()
+    test_earned_but_unsynthesized_detected()
+    test_single_source_concept_is_not_a_finding()
+    test_two_sources_with_no_block_is_not_earned()
 
     if _failures:
         print(f"\n{_failures} test(s) failed.")
