@@ -285,3 +285,24 @@ class Review(BaseModel):
         """Teach-first card: show key ideas, no question/judge/grade. True until
         the card has been taught once (``taught``) or graded (``reviews``)."""
         return not self.reviews and not self.taught
+
+
+# --------------------------------------------------------------------------- #
+# recall.py — bb ask's ranked claim contract (stable: consumed by an MCP shim)
+# --------------------------------------------------------------------------- #
+
+
+class Claim(BaseModel):
+    """One retrievable claim — a source's key-idea bullet, or a concept's
+    synthesized bullet. The unit `bb ask` ranks over."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str = Field(description="The bullet, verbatim.")
+    node: str = Field(description="Note stem — for [[wikilink]] and `bb read`.")
+    kind: Literal["concept", "source"] = Field(
+        description="'concept' claims (synthesized, multi-source) rank above "
+        "'source' claims (raw, single-source)."
+    )
+    url: str = Field(default="", description="Source frontmatter URL, when present.")
+    topics: list[str] = Field(default_factory=list, description="Frontmatter topics.")

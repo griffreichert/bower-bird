@@ -8,6 +8,7 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
   drain            Resolve unchecked X links in to-clip.md into source nodes.
   lint             Read-only structural graph lint (orphans, broken links).
+  ask              Ranked claim recall over the graph (read-only, no LLM).
   touch            Pull review due-dates to today for harvested nodes (weave's
                     hook, #29).
 """
@@ -79,6 +80,28 @@ def main() -> int:
         from bower_bird.lint import main as lint_main
 
         return lint_main(config)
+
+    if subcommand == "ask":
+        rest = args[1:]
+        as_json = "--json" in rest
+        rest = [a for a in rest if a != "--json"]
+        limit = 20
+        if "--limit" in rest:
+            i = rest.index("--limit")
+            limit = int(rest[i + 1])
+            del rest[i : i + 2]
+        query = " ".join(rest).strip()
+        if not query:
+            print('bb ask: usage: bb ask "<query>" [--json] [--limit N]')
+            return 2
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.recall import ask, format_json, format_text
+
+        claims = ask(config, query, limit=limit)
+        print(format_json(claims) if as_json else format_text(claims))
+        return 0
 
     if subcommand == "touch":
         ids = args[1:]
