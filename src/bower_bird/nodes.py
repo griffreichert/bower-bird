@@ -163,18 +163,34 @@ _CANDIDATE_WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _WORD_RE = re.compile(r"[a-z0-9]+")  # term-frequency pass, paired with tokenize()
 
 
-def feeding_source_counts(config: Config) -> Counter[str]:
-    """Per concept title, how many distinct `brain/sources/*.md` notes
-    wikilink to it. A concept is any title with a note under `brain/bowers/`
-    — this count is the ranking signal for `candidate_index` (#Step 4b)."""
+def inbound_link_counts(config: Config) -> Counter[str]:
+    """Per concept title, how many distinct notes wikilink to it — sources AND
+    the tool/people leaves. A concept is any title with a note under
+    `brain/bowers/`. This is `candidate_index`'s popularity signal.
+
+    Counts leaves deliberately, and that is the ONLY thing that should. A
+    concept fed by seven tool leaves is a well-connected hub even with one
+    source, but a sources-only count read it as an orphan — `Data extraction`
+    scored 1 against 8 real inbound links and fell below the popularity cutoff
+    (measured 2026-07-28, the Harvey miss). Synthesis eligibility is the
+    opposite question and keeps its own sources-only counter,
+    `lint.inbound_source_counts`: INVARIANTS wants two *sources* to converge,
+    and tool leaves carry no claims to converge.
+    """
     counts: Counter[str] = Counter()
-    if not config.sources_dir.is_dir() or not config.notes_dir.is_dir():
+    if not config.notes_dir.is_dir():
         return counts
     concept_stems = {p.stem for p in config.notes_dir.rglob("*.md")}
-    for path in sorted(config.sources_dir.glob("*.md")):
-        text = path.read_text(encoding="utf-8")
-        targets = {m.group(1).strip() for m in _CANDIDATE_WIKILINK_RE.finditer(text)}
-        counts.update(targets & concept_stems)
+    feeders = (config.sources_dir, config.tools_dir, config.people_dir)
+    for directory in feeders:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            targets = {
+                m.group(1).strip() for m in _CANDIDATE_WIKILINK_RE.finditer(text)
+            }
+            counts.update(targets & concept_stems)
     return counts
 
 
@@ -201,10 +217,10 @@ def candidate_index(config: Config, llm: LLMSettings, query: str) -> str:
       perfectly and ties fell back to popularity (measured 2026-07-28: ~8
       titles tied at 1.0 per source). Term frequency is what separates
       `Data extraction` from `Writing systems for AI` on the Harvey source.
-      Sort by (score, feeding-source count) descending; take
+      Sort by (score, inbound-link count) descending; take
       `llm.topic_relevance_limit`.
     - popularity: the top `llm.topic_candidate_limit` concepts by
-      feeding-source count — the always-present backbone.
+      inbound-link count — the always-present backbone.
 
     Final order: relevance hits first (the titles most worth reusing for
     THIS source), then popularity titles not already included. No dupes.
@@ -218,7 +234,7 @@ def candidate_index(config: Config, llm: LLMSettings, query: str) -> str:
     lines_by_title = {
         m.group(1): m.group(0) for m in _CANDIDATE_INDEX_LINE_RE.finditer(full_text)
     }
-    counts = feeding_source_counts(config)
+    counts = inbound_link_counts(config)
     query_tokens = tokenize(query)
     query_tf = Counter(w for w in _WORD_RE.findall(query.lower()) if w in query_tokens)
 

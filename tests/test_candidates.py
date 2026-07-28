@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from bower_bird.config import Config, LLMSettings
-from bower_bird.nodes import candidate_index
+from bower_bird.nodes import candidate_index, inbound_link_counts
 
 _failures = 0
 
@@ -133,10 +133,41 @@ def test_emitted_line_preserves_full_index_line() -> None:
         )
 
 
+def test_tool_leaves_count_toward_the_popularity_backbone() -> None:
+    """A concept fed by tool leaves is a hub, not an orphan. Sources-only
+    counting read `Data extraction` (1 source, 7 tool leaves) as a singleton
+    and cut it from the backbone — the Harvey miss, 2026-07-28."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        _build_vault(root)
+        cfg = _config(root)
+        tools = root / "brain" / "tools"
+        tools.mkdir(parents=True)
+        for i in range(4):
+            (tools / f"tool-{i}.md").write_text(
+                "# Tool\n[[Data extraction]]\n", encoding="utf-8"
+            )
+
+        counts = inbound_link_counts(cfg)
+        check(
+            counts["Data extraction"] == 5,
+            f"1 source + 4 tool leaves = 5 inbound, got {counts['Data extraction']}",
+        )
+
+        # Popularity alone must now carry it, with relevance switched off.
+        llm = LLMSettings(topic_relevance_limit=1, topic_candidate_limit=2)
+        result = candidate_index(cfg, llm, "nothing matches here")
+        check(
+            "[[Data extraction]]" in result,
+            "leaf-fed concept reaches the popularity backbone",
+        )
+
+
 if __name__ == "__main__":
     test_low_count_relevant_concept_included_despite_popularity_cutoff()
     test_relevance_hits_come_before_popularity_only_titles()
     test_emitted_line_preserves_full_index_line()
+    test_tool_leaves_count_toward_the_popularity_backbone()
 
     if _failures:
         print(f"\n{_failures} test(s) failed.")
