@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from bower_bird.config import Config
-from bower_bird.tidy import main, propose_filings, rebuild_index
+from bower_bird.tidy import concept_definitions, main, propose_filings, rebuild_index
 
 _failures = 0
 
@@ -75,6 +75,93 @@ def test_index_rebuild_preserves_oneliners_drops_ghosts_adds_new() -> None:
         check(
             rebuild.dropped == ["Ghost"],
             f"dropped list names Ghost, got {rebuild.dropped}",
+        )
+
+
+_CONCEPT_WITH_DEFINITION = """\
+---
+title: "{title}"
+---
+# {title}
+
+<!-- bower:concept -->
+## Concept
+
+**Definition:** {definition}
+
+**Why it matters:** because.
+<!-- /bower:concept -->
+"""
+
+
+def test_concept_definitions_reads_definition_line() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        bowers = root / "brain" / "bowers"
+        bowers.mkdir(parents=True)
+        (bowers / "Data extraction.md").write_text(
+            _CONCEPT_WITH_DEFINITION.format(
+                title="Data extraction",
+                definition="pulling structured fields out of raw documents. "
+                "Other trailing detail.",
+            ),
+            encoding="utf-8",
+        )
+        cfg = _config(root)
+        definitions = concept_definitions(cfg)
+        check(
+            definitions.get("Data extraction")
+            == "pulling structured fields out of raw documents.",
+            f"first sentence only, got {definitions.get('Data extraction')!r}",
+        )
+
+
+def test_index_rebuild_backfills_empty_oneliner_from_definition() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        bowers = root / "brain" / "bowers"
+        bowers.mkdir(parents=True)
+        (root / "brain" / "sources").mkdir(parents=True)
+        (root / "brain" / "_index.md").write_text(
+            "---\ntitle: Index\n---\n# Index\n\n## Pages\n- [[Data extraction]]\n",
+            encoding="utf-8",
+        )
+        (bowers / "Data extraction.md").write_text(
+            _CONCEPT_WITH_DEFINITION.format(
+                title="Data extraction", definition="pulling fields from docs."
+            ),
+            encoding="utf-8",
+        )
+        cfg = _config(root)
+        rebuild = rebuild_index(cfg)
+        check(
+            "- [[Data extraction]] ·  · pulling fields from docs." in rebuild.text,
+            f"empty one-liner backfilled from definition, got: {rebuild.text}",
+        )
+
+
+def test_index_rebuild_never_overwrites_existing_oneliner() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        bowers = root / "brain" / "bowers"
+        bowers.mkdir(parents=True)
+        (root / "brain" / "sources").mkdir(parents=True)
+        (root / "brain" / "_index.md").write_text(
+            "---\ntitle: Index\n---\n# Index\n\n## Pages\n"
+            "- [[Data extraction]] · ai · Human-written one-liner.\n",
+            encoding="utf-8",
+        )
+        (bowers / "Data extraction.md").write_text(
+            _CONCEPT_WITH_DEFINITION.format(
+                title="Data extraction", definition="a definition that must not win."
+            ),
+            encoding="utf-8",
+        )
+        cfg = _config(root)
+        rebuild = rebuild_index(cfg)
+        check(
+            "- [[Data extraction]] · ai · Human-written one-liner." in rebuild.text,
+            "existing non-empty one-liner is never overwritten by a definition",
         )
 
 
@@ -168,6 +255,9 @@ def test_dry_run_writes_nothing() -> None:
 
 if __name__ == "__main__":
     test_index_rebuild_preserves_oneliners_drops_ghosts_adds_new()
+    test_concept_definitions_reads_definition_line()
+    test_index_rebuild_backfills_empty_oneliner_from_definition()
+    test_index_rebuild_never_overwrites_existing_oneliner()
     test_flat_concept_with_two_links_into_one_bower_moves()
     test_flat_concept_with_one_link_each_into_two_bowers_does_not_move()
     test_bower_landing_note_never_files_into_itself()

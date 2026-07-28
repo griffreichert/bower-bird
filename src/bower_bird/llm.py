@@ -169,9 +169,10 @@ def synthesize_clipping(
     body_urls: list[str] | None = None,
     person_anchors: list[str] | None = None,
 ) -> ClippingPlan:
-    # candidate_index is the raw `_index.md` catalog — one line per existing
-    # brain/ page (`- [[title]] · category · one-liner`). It is the single,
-    # compact link-candidate + category source (no per-page reads).
+    # candidate_index is a relevance-ranked subset of `_index.md`, most-
+    # relevant-to-this-source first, each line `- [[title]] · category ·
+    # one-liner` (one-liner may be empty). It is the single, compact
+    # link-candidate + category source (no per-page reads).
     candidates = candidate_index.strip() or "(none yet)"
     highlights = highlights or []
     body_urls = body_urls or []
@@ -210,7 +211,10 @@ def synthesize_clipping(
         "List the coarse topics this source feeds — a rich source usually feeds "
         "SEVERAL (don't force it down to one). PREFER titles already in the index "
         "below; add a new topic only when none fits and it's broad enough to "
-        "reuse. Each topic is a SHORT, REUSABLE concept handle (a 2-5 word noun "
+        "reuse. A precise new topic beats a stretched existing one — don't force "
+        "this source onto a listed title whose meaning doesn't actually cover it. "
+        "The candidates below are ordered most-relevant-to-this-source first. "
+        "Each topic is a SHORT, REUSABLE concept handle (a 2-5 word noun "
         "phrase many sources could link to, e.g. 'Agentic loops'), NOT a sentence "
         "or claim, NOT the source title.\n\n"
         "Assign a single top-level CATEGORY (a short lowercase noun). REUSE a "

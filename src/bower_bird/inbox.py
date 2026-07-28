@@ -103,7 +103,8 @@ def file_clip(
     marks = extract_marks(body, self_url=meta.url)
     clean = strip_directives(body)
     meta = meta.model_copy(update={"body_excerpt": clean[:_BODY_LIMIT]})
-    candidates = nodes.candidate_index(config, config.llm.topic_candidate_limit)
+    query = f"{meta.title} {meta.body_excerpt}"
+    candidates = nodes.candidate_index(config, config.llm, query)
     plan = synthesize_clipping(
         meta,
         "",
