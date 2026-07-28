@@ -86,7 +86,8 @@ class LLMSettings(BaseModel):
         default=30,
         gt=0,
         description="Max concept titles in candidate_index's popularity half "
-        "— the always-present backbone, ranked by feeding-source count. Not "
+        "— the always-present backbone, ranked by inbound-link count "
+        "(sources + tool/people leaves). Not "
         "the whole candidate list: topic_relevance_limit supplies the "
         "query-relevant half ahead of it. The full ~320-title index buries "
         "the 'prefer an existing title' instruction and Haiku coins new ones "
