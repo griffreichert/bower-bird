@@ -71,15 +71,28 @@ class LLMSettings(BaseModel):
     question_max_tokens: int = Field(
         default=200, gt=0, description="Cap for generate_question's quiz question."
     )
-    topic_candidate_limit: int = Field(
-        default=60,
+    topic_relevance_limit: int = Field(
+        default=40,
         gt=0,
-        description="Max concept titles synthesize_clipping sees as link "
-        "candidates, ranked by feeding-source count. The full ~320-title "
-        "index buries the 'prefer an existing title' instruction and Haiku "
-        "coins new ones instead (measured: 221 singleton topics) — capping "
-        "to the most-fed concepts keeps the preferred targets small enough "
-        "to matter.",
+        description="Max concept titles selected by relevance to the source "
+        "being shelved — the query-matched half of candidate_index's "
+        "two-part list. Popularity alone (topic_candidate_limit) buries "
+        "low-count-but-on-topic concepts below the cut (measured 2026-07-28: "
+        "the Harvey source's actually-relevant concepts, e.g. 'Data "
+        "extraction', all sat at feeding-source count 1, well below the "
+        "popularity cutoff).",
+    )
+    topic_candidate_limit: int = Field(
+        default=30,
+        gt=0,
+        description="Max concept titles in candidate_index's popularity half "
+        "— the always-present backbone, ranked by feeding-source count. Not "
+        "the whole candidate list: topic_relevance_limit supplies the "
+        "query-relevant half ahead of it. The full ~320-title index buries "
+        "the 'prefer an existing title' instruction and Haiku coins new ones "
+        "instead (measured: 221 singleton topics) — capping to the "
+        "most-fed concepts keeps the preferred targets small enough to "
+        "matter.",
     )
 
 

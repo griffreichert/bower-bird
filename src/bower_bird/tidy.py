@@ -35,6 +35,8 @@ from bower_bird.nodes import read_index
 
 _PAGES_HEADING = "## Pages"
 _PAGE_LINE_RE = re.compile(r"^- \[\[([^\]]+)\]\](.*)$", re.MULTILINE)
+_DEFINITION_RE = re.compile(r"\*\*Definition:\*\*\s*(.+)")
+_ONELINER_LIMIT = 140
 
 
 def parse_page_lines(index_text: str) -> dict[str, tuple[str, str]]:
@@ -70,6 +72,32 @@ def page_stems(config: Config) -> list[str]:
     return stems
 
 
+def concept_definitions(config: Config) -> dict[str, str]:
+    """stem -> a short definition, for concept notes under `notes_dir` whose
+    `<!-- bower:concept -->` block has a `**Definition:** ...` line.
+
+    Synthesized concepts carry a real definition; capture-time stubs
+    (`upsert_index_line(..., "", insert_only=True)`) never do — this backfills
+    `rebuild_index`'s empty one-liners with something meaningful instead of
+    leaving them bare forever. First sentence only, markdown emphasis
+    stripped, capped at ~140 chars.
+    """
+    definitions: dict[str, str] = {}
+    if not config.notes_dir.is_dir():
+        return definitions
+    for path in config.notes_dir.rglob("*.md"):
+        m = _DEFINITION_RE.search(read_text(path))
+        if not m:
+            continue
+        line = m.group(1).strip()
+        sentence_match = re.match(r"(.+?[.!?])(?:\s|$)", line)
+        sentence = sentence_match.group(1) if sentence_match else line
+        sentence = re.sub(r"[*_]", "", sentence).strip()
+        if sentence:
+            definitions[path.stem] = sentence[:_ONELINER_LIMIT]
+    return definitions
+
+
 @dataclass
 class IndexRebuild:
     text: str
@@ -81,10 +109,13 @@ class IndexRebuild:
 def rebuild_index(config: Config) -> IndexRebuild:
     old_text = read_index(config)
     old_lines = parse_page_lines(old_text)
+    definitions = concept_definitions(config)
     stems = sorted(set(page_stems(config)), key=str.lower)
     lines = []
     for stem in stems:
         category, oneline = old_lines.get(stem, ("", ""))
+        if not oneline and stem in definitions:
+            oneline = definitions[stem]
         lines.append(f"- [[{stem}]] · {category} · {oneline}".rstrip(" ·"))
     body = "\n".join(lines)
     prefix = index_prefix(old_text)
