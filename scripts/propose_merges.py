@@ -13,8 +13,19 @@ feeding-source count, tiered by confidence:
 
   - `exact`  — identical after case-fold + singular/plural normalisation
                (`Agent architectures` == `Agent architecture`).
-  - `high`   — sim >= 0.67 AND >= 1 shared feeding source.
+  - `high`   — sim >= 2/3 AND >= 1 shared feeding source (2/3 is the exact
+               Jaccard of the commonest near-duplicate shape: 2-of-3 token
+               overlap).
   - `review` — everything else that clears the noise floor.
+
+A concept carrying a `<!-- bower:concept -->` synthesis block — hand-earned
+prose with citations — never loses a merge. Any pair whose computed loser is
+synthesized is dropped outright rather than flipped: flipping fabricates a
+merge direction nobody vetted, and it inverted the hierarchy in practice
+(proposing broad `Agent architecture` INTO narrow `Agent memory
+architectures` to protect the prose). Within each tier, pairs are ranked by
+title similarity, with shared feeding sources as the tie-break — shared
+feeders measure co-occurrence, and co-occurrence is not synonymy.
 
 Bower landing notes (`agents`, `llms`, `learning`, `research`, `life`, `nfl`,
 `ai-and-work` — one per `brain/bowers/` subdirectory, matching its name
@@ -60,7 +71,11 @@ _STOPWORDS = {
     "systems",
     "design",
 }
-_HIGH_SIM = 0.67
+_SYNTH_MARKER = "<!-- bower:concept"
+# Exact fraction, not 0.67: the commonest near-duplicate shape is 2-of-3
+# token overlap (Jaccard = 2/3 = 0.6667), which 0.67 excludes by a hair —
+# don't "tidy" this back to a rounded literal.
+_HIGH_SIM = 2 / 3
 _TIERS = ("exact", "high", "review")
 
 
@@ -98,6 +113,17 @@ def load_concepts(notes_dir: Path) -> dict[str, Path]:
         p.stem: p
         for p in notes_dir.rglob("*.md")
         if not p.stem.startswith("_") and p.stem not in excluded
+    }
+
+
+def synthesized_stems(concepts: dict[str, Path]) -> set[str]:
+    """Concept stems whose file carries a `<!-- bower:concept ... -->`
+    synthesis block — hand-earned prose with citations. These must never be
+    the merge loser."""
+    return {
+        stem
+        for stem, path in concepts.items()
+        if _SYNTH_MARKER in path.read_text(encoding="utf-8", errors="ignore")
     }
 
 
@@ -142,25 +168,47 @@ def classify_tier(a: str, b: str, sim: float, shared: int) -> str:
 
 
 def propose(
-    concepts: dict[str, Path], feeders: dict[str, set[str]]
-) -> list[MergeCandidate]:
+    concepts: dict[str, Path],
+    feeders: dict[str, set[str]],
+    synthesized: set[str],
+) -> tuple[list[MergeCandidate], int]:
+    """Returns (candidates, pairs dropped to protect a synthesized concept)."""
     candidates = []
+    dropped = 0
     for a, b in combinations(sorted(concepts), 2):
         ta, tb = norm_words(a), norm_words(b)
         if not ta or not tb:
             continue
         sim = len(ta & tb) / len(ta | tb)
         shared = len(feeders[a] & feeders[b])
-        # Noise floor: below this, titles neither read alike nor co-occur
-        # often enough to be worth a human's attention at all.
-        if sim < 0.3:
-            continue
-        if sim < 0.45 and shared < 3:
+        # Noise floor. Title similarity is the ONLY admission test: shared
+        # feeders used to buy a low-similarity pair in (`sim < 0.45 and
+        # shared < 3`), on the theory that co-occurring titles are probably
+        # one concept. Measured 2026-07-29 — all three pairs that hatch
+        # admitted were junk (`Tool design for agents` <-> `Agent
+        # architecture`, shared=11; `Agentic loops` <-> `Loop engineering`,
+        # shared=8; `Agentic loops` <-> `Human-in-the-loop`, shared=4).
+        # Co-occurrence is not synonymy — two concepts that legitimately
+        # appear together in many sources are exactly the ones NOT to merge.
+        # Shared feeders stays as a confirmer inside `classify_tier`, where
+        # high similarity has already been established.
+        if sim < 0.45:
             continue
         na, nb = len(feeders[a]), len(feeders[b])
         # Winner = more feeding sources (more established); tie-break shorter
         # title (the less redundant name).
         winner, loser = (a, b) if (na, -len(a)) >= (nb, -len(b)) else (b, a)
+
+        # A synthesized concept never loses — and we don't flip to save the
+        # pair either. Flipping fabricates a merge direction nobody vetted:
+        # it proposed `Agent architecture` (31 sources, broad) INTO
+        # `Agent memory architectures` (10 sources, narrow), inverting the
+        # hierarchy to protect the prose. Any merge touching earned synthesis
+        # is a human judgement call, so drop the pair and say so.
+        if loser in synthesized:
+            dropped += 1
+            continue
+
         tier = classify_tier(a, b, sim, shared)
         candidates.append(
             MergeCandidate(
@@ -173,21 +221,28 @@ def propose(
                 winner_sources=len(feeders[winner]),
             )
         )
-    return candidates
+    return candidates, dropped
 
 
 _HEADER = """\
 ---
 author: claude
-date: 2026-07-25
+date: 2026-07-29
 ---
 
-# Merge candidates — brain/bowers concepts (2026-07-25)
+# Merge candidates — brain/bowers concepts
 
-Generated by `scripts/propose_merges.py` (notes/2026-07-25-retrieval-plan.md,
-Step 4). Read-only proposal. `scripts/apply_merges.py` applies the `exact`
-tier by default; `high`/`review` need Griffin's approval first
-(re-run apply with `--tier high` once this file has been reviewed/edited).
+Generated by `scripts/propose_merges.py`. Read-only proposal.
+`scripts/apply_merges.py` applies the `exact` tier by default; `high`/`review`
+need Griffin's approval first (re-run apply with `--tier high` once this file
+has been reviewed/edited).
+
+A concept carrying a `<!-- bower:concept -->` synthesis block — hand-earned
+prose with citations — never loses a merge. Any pair whose computed loser is
+synthesized is dropped outright rather than flipped — merging into or out of
+earned synthesis is a human judgement call, not a checkbox. Within each
+tier, pairs are ranked by title similarity, with shared feeding sources as
+the tie-break — shared feeders measure co-occurrence, not synonymy.
 
 Bower landing notes (`agents`, `llms`, `learning`, `research`, `life`, `nfl`,
 `ai-and-work`) are excluded from candidacy — they match everything
@@ -199,6 +254,10 @@ def format_map(candidates: list[MergeCandidate]) -> str:
     parts = [_HEADER]
     by_tier = {tier: [c for c in candidates if c.tier == tier] for tier in _TIERS}
     for tier in _TIERS:
+        # Similarity first, shared feeders as the tie-break. Ranking by
+        # shared feeders instead surfaced co-occurring but distinct concepts
+        # at the top of the list (measured 2026-07-29) — synonymy is what a
+        # merge needs, and only the title similarity measures that.
         group = sorted(by_tier[tier], key=lambda c: (-c.sim, -c.shared))
         parts.append(f"\n## {tier} ({len(group)})\n")
         parts.extend(f"{c.line()}\n" for c in group)
@@ -221,7 +280,8 @@ def main() -> int:
     )
     concepts = load_concepts(config.notes_dir)
     feeders = load_feeders(config.sources_dir, concepts)
-    candidates = propose(concepts, feeders)
+    synthesized = synthesized_stems(concepts)
+    candidates, dropped_synth = propose(concepts, feeders, synthesized)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(format_map(candidates), encoding="utf-8")
@@ -233,6 +293,7 @@ def main() -> int:
     print(f"{len(concepts)} candidate concepts ({multi} with >=2 feeding sources)")
     print(f"{len(candidates)} merge candidates -> {args.out}")
     print(f"  exact={counts['exact']} high={counts['high']} review={counts['review']}")
+    print(f"  dropped (synthesized side would lose): {dropped_synth}")
     print(
         f"orphans (0 feeders): {orphans}, singletons (1 feeder): {singles}",
         file=sys.stderr,

@@ -17,11 +17,14 @@ from apply_merges import (  # noqa: E402
     parse_map,
 )
 from propose_merges import (  # noqa: E402
+    MergeCandidate,
     classify_tier,
+    format_map,
     landing_note_stems,
     load_concepts,
     load_feeders,
     propose,
+    synthesized_stems,
 )
 
 from bower_bird.config import Config  # noqa: E402
@@ -128,12 +131,133 @@ def test_propose_end_to_end_tiers_the_exact_pair() -> None:
 
         concepts = load_concepts(root / "brain" / "bowers")
         feeders = load_feeders(sources, concepts)
-        candidates = propose(concepts, feeders)
+        candidates, dropped = propose(concepts, feeders, synthesized_stems(concepts))
+        check(dropped == 0, f"no synthesized concepts here, got {dropped} dropped")
         exact = [c for c in candidates if c.tier == "exact"]
         check(len(exact) == 1, f"exactly one exact-tier pair, got {len(exact)}")
         if exact:
             check(exact[0].loser == "Agent architectures", "loser is fewer-sourced")
             check(exact[0].winner == "Agent architecture", "winner is more-fed")
+
+
+# --------------------------------------------------------------------------- #
+# synthesized concepts never lose a merge
+# --------------------------------------------------------------------------- #
+
+
+def test_pair_dropped_when_synthesized_concept_would_lose() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        bowers = root / "brain" / "bowers" / "agents"
+        sources = root / "brain" / "sources"
+        bowers.mkdir(parents=True)
+        sources.mkdir(parents=True)
+        # "Agent architecture" has more feeding sources, so the plain
+        # feeder-count rule makes the synthesized "Agent memory
+        # architectures" the loser — which must kill the pair outright.
+        (bowers / "Agent architecture.md").write_text(
+            _note("Agent architecture"), encoding="utf-8"
+        )
+        (bowers / "Agent memory architectures.md").write_text(
+            _note("Agent memory architectures") + "\n<!-- bower:concept -->\n",
+            encoding="utf-8",
+        )
+        (sources / "S0.md").write_text(
+            "# S0\n\n## Links\n- [[Agent architecture]]\n"
+            "- [[Agent memory architectures]]\n",
+            encoding="utf-8",
+        )
+        for i in (1, 2):
+            (sources / f"S{i}.md").write_text(
+                f"# S{i}\n\n## Links\n- [[Agent architecture]]\n", encoding="utf-8"
+            )
+
+        concepts = load_concepts(root / "brain" / "bowers")
+        feeders = load_feeders(sources, concepts)
+        synthesized = synthesized_stems(concepts)
+        check(
+            synthesized == {"Agent memory architectures"},
+            f"synthesis marker detected, got {synthesized}",
+        )
+
+        # Dropped, not flipped. Flipping would propose merging the broad,
+        # more-fed `Agent architecture` INTO the narrow synthesized one —
+        # a direction nobody vetted, inverting the hierarchy to save prose.
+        candidates, dropped = propose(concepts, feeders, synthesized)
+        check(dropped == 1, f"pair dropped to protect the prose, got {dropped}")
+        check(not candidates, f"no candidate proposed, got {len(candidates)}")
+
+
+def test_both_synthesized_drops_pair() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "BowerBird"
+        bowers = root / "brain" / "bowers" / "agents"
+        sources = root / "brain" / "sources"
+        bowers.mkdir(parents=True)
+        sources.mkdir(parents=True)
+        marker = "\n<!-- bower:concept -->\n"
+        (bowers / "Agent architecture.md").write_text(
+            _note("Agent architecture") + marker, encoding="utf-8"
+        )
+        (bowers / "Agent memory architectures.md").write_text(
+            _note("Agent memory architectures") + marker, encoding="utf-8"
+        )
+        (sources / "S0.md").write_text(
+            "# S0\n\n## Links\n- [[Agent architecture]]\n"
+            "- [[Agent memory architectures]]\n",
+            encoding="utf-8",
+        )
+
+        concepts = load_concepts(root / "brain" / "bowers")
+        feeders = load_feeders(sources, concepts)
+        synthesized = synthesized_stems(concepts)
+        candidates, dropped = propose(concepts, feeders, synthesized)
+        check(len(candidates) == 0, f"no candidate produced, got {candidates}")
+        check(dropped == 1, f"one pair dropped for both-synthesized, got {dropped}")
+
+
+# --------------------------------------------------------------------------- #
+# high tier reachable at exactly 2/3 (2-of-3 token overlap)
+# --------------------------------------------------------------------------- #
+
+
+def test_high_tier_reachable_at_two_of_three_overlap() -> None:
+    tier = classify_tier("Foo bar baz", "Foo bar qux", sim=2 / 3, shared=1)
+    check(
+        tier == "high",
+        f"2-of-3 overlap with a shared feeder classified high, got {tier}",
+    )
+
+
+# --------------------------------------------------------------------------- #
+# tier output ranked by shared feeders, not sim
+# --------------------------------------------------------------------------- #
+
+
+def test_format_map_orders_by_shared_feeders() -> None:
+    noise = MergeCandidate(
+        loser="Legal AI tools",
+        winner="AI design tools",
+        tier="review",
+        sim=0.5,
+        shared=0,
+        loser_sources=1,
+        winner_sources=1,
+    )
+    signal = MergeCandidate(
+        loser="Agent memory architectures",
+        winner="Agent architecture",
+        tier="review",
+        sim=0.5,
+        shared=3,
+        loser_sources=1,
+        winner_sources=3,
+    )
+    out = format_map([noise, signal])
+    check(
+        out.index("Agent memory architectures") < out.index("Legal AI tools"),
+        "higher shared-feeder pair listed first despite equal sim",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -284,6 +408,10 @@ if __name__ == "__main__":
     test_high_tier_rejected_without_shared_source()
     test_low_similarity_falls_to_review()
     test_propose_end_to_end_tiers_the_exact_pair()
+    test_pair_dropped_when_synthesized_concept_would_lose()
+    test_both_synthesized_drops_pair()
+    test_high_tier_reachable_at_two_of_three_overlap()
+    test_format_map_orders_by_shared_feeders()
     test_parse_map_reads_tier_from_each_line()
     test_loser_source_stems_reads_sources_heading_only()
     test_dry_run_writes_nothing()
