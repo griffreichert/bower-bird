@@ -1,23 +1,10 @@
-"""Durable state: Telegram offset + processed-item dedup.
-
-Idempotency is a hard invariant: an item already processed is never
-double-processed. Two layers:
-
-- `telegram_offset` — passed to getUpdates so Telegram never redelivers an
-  update we've already acknowledged.
-- `processed_urls` — guards against the same link being re-sent by hand and
-  re-ingested.
-- `processed_hashes` — content hashes of clipper files already processed.
-  Lives here (in the repo), not the vault, so dedup survives the original clip
-  being moved to `archive/`.
-"""
-
 import hashlib
 import json
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+from pydantic import BaseModel, Field
 
 from bower_bird.resolve import parse_tweet_id
 
@@ -76,12 +63,13 @@ def canonicalize_url(url: str) -> str:
     return urlunparse((parsed.scheme.lower(), host, path, "", query, ""))
 
 
-@dataclass
-class State:
+class State(BaseModel):
+    """Persist Telegram progress and processed item identities."""
+
     path: Path
     telegram_offset: int = 0
-    processed_urls: set[str] = field(default_factory=set)
-    processed_hashes: set[str] = field(default_factory=set)
+    processed_urls: set[str] = Field(default_factory=set)
+    processed_hashes: set[str] = Field(default_factory=set)
 
     @classmethod
     def load(cls, path: Path) -> "State":

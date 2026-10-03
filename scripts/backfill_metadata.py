@@ -1,29 +1,9 @@
-"""Backfill frontmatter metadata onto existing brain/sources/ notes (#B of the
-metadata-search-surface spec, notes/specs/metadata-search-surface.md).
-
-Adds two projected facets to every source note's frontmatter — never invented,
-always derived from data that already exists elsewhere:
-
-  - `category` <- this node's own line in `_index.md` (`- [[title]] · cat · ...`).
-  - `topics`   <- this node's own `## Links` wikilinks (never `## Sources`), so
-                  frontmatter topics == `## Links` by construction.
-
-Same pass also cleans drift that has built up in `tags:` and the key set:
-mints a missing `id:` (enrols the node as a fresh box-0 peck card), strips
-leaked wikilink tags and any tag outside the source allowlist
-(source/dig/frozen), and drops legacy keys (`description:`, `bower:`).
-
-Frontmatter only. Body prose (everything after the closing `---`) is carried
-through byte-identical — never touched.
-
-Run: uv run python scripts/backfill_metadata.py [--dry-run]
-"""
-
 import re
 import sys
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
+
+from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -46,8 +26,9 @@ _LINKS_SECTION_RE = re.compile(
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 
 
-@dataclass
-class ParsedNote:
+class ParsedNote(BaseModel):
+    """Hold the frontmatter fields rewritten by the backfill."""
+
     fm: str  # raw frontmatter inner text (between the --- delimiters)
     rest: str  # everything after the closing --- , untouched
     id: str
@@ -55,7 +36,7 @@ class ParsedNote:
     source: str
     author: str
     created: str
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 def parse_note(text: str) -> ParsedNote | None:
@@ -125,8 +106,9 @@ def clean_tags(tags: list[str]) -> tuple[list[str], int, int]:
     return cleaned, wikilinks, junk
 
 
-@dataclass
-class TransformResult:
+class TransformResult(BaseModel):
+    """Describe one rewritten note and the changes it contains."""
+
     text: str
     changed: bool
     id_minted: bool

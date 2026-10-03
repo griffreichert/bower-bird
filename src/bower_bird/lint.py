@@ -1,24 +1,7 @@
-"""`bb lint` — read-only, structural-only graph linter.
-
-Five checks, no LLM calls, no network, writes nothing:
-  1. Orphan review entries — ids in `_review.json` with no matching brain node.
-  2. Orphan nodes — brain files with zero outbound AND zero inbound wikilinks
-     (skipping `_`-prefixed files like `_index.md`, `_log.md`).
-  3. Broken links — `[[wikilinks]]` that resolve to no brain file stem.
-  4. Topic drift — a source's frontmatter `topics` disagrees with its `## Links`
-     wikilinks (the metadata-search-surface projection, #29/spec).
-  5. Category drift — a source's frontmatter `category` disagrees with its
-     `_index.md` line.
-
-Both projection checks only fire when the frontmatter key is present — a
-not-yet-backfilled node (no `topics`/`category` at all) is not a finding.
-
-Exit code 1 if any findings, 0 if clean.
-"""
-
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
+
+from pydantic import BaseModel, Field
 
 from bower_bird.config import Config
 from bower_bird.review import ReviewStore
@@ -89,15 +72,14 @@ def index_categories(index_text: str) -> dict[str, str]:
     }
 
 
-@dataclass
-class LintFindings:
+class LintFindings(BaseModel):
     """Findings from a lint pass, one entry per finding."""
 
-    orphan_reviews: list[str] = field(default_factory=list)
-    orphan_nodes: list[str] = field(default_factory=list)
-    broken_links: list[str] = field(default_factory=list)
-    topic_drift: list[str] = field(default_factory=list)
-    category_drift: list[str] = field(default_factory=list)
+    orphan_reviews: list[str] = Field(default_factory=list)
+    orphan_nodes: list[str] = Field(default_factory=list)
+    broken_links: list[str] = Field(default_factory=list)
+    topic_drift: list[str] = Field(default_factory=list)
+    category_drift: list[str] = Field(default_factory=list)
 
     @property
     def empty(self) -> bool:

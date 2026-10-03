@@ -1,35 +1,6 @@
-"""Reader marks: signals the human leaves in a clip while reading it.
-
-A Web Clipper save is already a "I read this" signal; these marks let the reader
-say *what mattered* inside it, with near-zero friction in Obsidian. Four marks,
-all optional, all extracted from the clip's markdown body:
-
-- ``==highlight==``  — interesting, supports my knowledge → persist verbatim.
-  These are the durable unit: brain/ keeps highlights, not whole articles.
-- ``#dig`` on a line — want to learn more about this → next-reads.
-- ``> ? question``   — a blockquote line starting with ``?`` is my open question
-  (plain ``> quotes`` from the article are ignored). Continuation ``>`` lines
-  fold into the same question.
-- ``[anchor](url)``  — outbound links the article references → leads to capture.
-
-Plus three bare *directive* tags (opt-in, deliberate — like ``#dig``):
-
-- ``#person`` on/near a line — promote the person named there into a
-  ``brain/people/`` node. Anchors person-extraction (default OFF), so ordinary
-  bylines don't auto-mint. Placed inline (``Jerry Liu ... #person``) or on its
-  own line under the mention (``...Steve Jobs was cool`` ⏎ ``#person``).
-- ``#promote`` — file the full source body straight into the graph (not a thin
-  node), and freeze it.
-- ``#frozen`` — mark this node's prose immutable (weave adds links, never
-  rewrites). ``#promote`` implies ``#frozen``.
-
-Pure text logic — no network, no vault writes. The Tier-1 pass lifts these into
-the source note; Tier-2 grows highlights into nest concepts and routes
-dig/questions into the digest's gaps & next-reads.
-"""
-
 import re
-from dataclasses import dataclass, field
+
+from pydantic import BaseModel, Field
 
 _HIGHLIGHT = re.compile(r"==(.+?)==")
 _MD_LINK = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
@@ -63,15 +34,14 @@ def strip_directives(body: str) -> str:
     return out.strip("\n")
 
 
-@dataclass
-class Marks:
+class Marks(BaseModel):
     """The reader's marks pulled from a clip body."""
 
-    highlights: list[str] = field(default_factory=list)
-    dig: list[str] = field(default_factory=list)
-    questions: list[str] = field(default_factory=list)
-    further_links: list[tuple[str, str]] = field(default_factory=list)
-    person_anchors: list[str] = field(default_factory=list)  # #person mention text
+    highlights: list[str] = Field(default_factory=list)
+    dig: list[str] = Field(default_factory=list)
+    questions: list[str] = Field(default_factory=list)
+    further_links: list[tuple[str, str]] = Field(default_factory=list)
+    person_anchors: list[str] = Field(default_factory=list)  # #person mention text
     promote: bool = False  # #promote — full body into the graph + freeze
     frozen: bool = False  # #frozen — prose immutable (promote implies this)
 

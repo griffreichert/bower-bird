@@ -1,36 +1,11 @@
-"""Spaced-repetition review store + peck quiz loop.
-
-``_review.json`` lives in the vault (``BowerBird/_review.json``), keyed by each
-source node's immutable ``id:`` (``brain/sources/*.md`` only — bowers/people/
-tools never enrol). It is the only file this module writes at runtime; it
-never touches anything else in the vault.
-
-Leitner ladder: [1, 3, 7, 16, 35, 75] days.
-  - strong  → box + 1 (capped at last rung), due = today + ladder[box]
-  - weak    → stay (box unchanged),           due = today + ladder[box]
-  - wrong   → box 0,                          due = today + ladder[0]
-
-Unit = one card per source node (#18). A node enrols the first time it's seen
-due (``sync_sources``) rather than at ingest time — no ingest-side coupling.
-The stored Feynman payload is dead: questions are generated fresh at quiz
-time from the node's ``## Key ideas`` (+ ``## Seed thoughts``), depth
-scaled to the Leitner box. A never-seen node is a teach-first card
-(``Review.is_teach``): key ideas are shown, no question/judge/grade, due bumps
-to tomorrow and ``taught`` is set — so the card graduates to a real quiz the
-next session instead of teaching forever.
-
-``peck`` is pull-only: it is never called from the cron pass.
-"""
-
 import json
 import re
 import sys
-from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from bower_bird.config import Config
 from bower_bird.schema import Review, ReviewEntry
@@ -317,15 +292,14 @@ _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _BULLET_RE = re.compile(r"^-\s+(.*)$", re.MULTILINE)
 
 
-@dataclass
-class SourceNode:
-    """A quizzable brain/sources/ node — plumbing, not a validated contract."""
+class SourceNode(BaseModel):
+    """Represent the parsed fields used to quiz one source node."""
 
     id: str
     title: str
-    key_ideas: list[str] = field(default_factory=list)
+    key_ideas: list[str] = Field(default_factory=list)
     seed: str = ""
-    linked_titles: list[str] = field(default_factory=list)
+    linked_titles: list[str] = Field(default_factory=list)
 
 
 def parse_source_node(path: Path) -> SourceNode | None:
