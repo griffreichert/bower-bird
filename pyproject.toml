@@ -34,7 +34,13 @@ line-length = 88
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B"]
+select = ["E", "F", "I", "W", "UP", "B", "G", "LOG", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "Use runtime annotations directly."
+"dataclasses.dataclass".msg = "Use a Pydantic model or plain local values."
+"dataclasses.make_dataclass".msg = "Use a Pydantic model or plain local values."
+"pydantic.dataclasses.dataclass".msg = "Use BaseModel instead."
 
 [tool.commitizen]
 name = "cz_conventional_commits"
