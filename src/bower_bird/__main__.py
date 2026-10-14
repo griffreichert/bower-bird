@@ -1,23 +1,3 @@
-"""Entry point: `python -m bower_bird` (or the `bb` / `bower-bird` scripts).
-
-Subcommands (also exposed as their own `uv run <verb>` scripts):
-  (default)        One full pass: Telegram queue + clipper inbox gather (cron).
-  pull             Pull the Telegram queue only (every send shelves to brain/).
-  build            Gather Web Clipper drops in inbox/ → brain/sources/.
-  peck             Run a spaced-rep quiz session over due nodes (pull-only).
-  prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
-  drain            Resolve unchecked X links in to-clip.md into source nodes.
-  lint             Read-only structural graph lint (orphans, broken links).
-  tidy             Weave's bookkeeping half: index rebuild + concept filing
-                    (zero LLM, dry-run by default — pass --apply to write).
-  stale            Ranked weave queue: which concept to synthesize next.
-  ask              Ranked claim recall over the graph (read-only, no LLM).
-  touch            Pull review due-dates to today for harvested nodes (weave's
-                    hook, #29).
-  anki             Anki front end: push claims to the deck as cards, harvest
-                    review signals back (needs Anki open with AnkiConnect).
-"""
-
 import sys
 
 from pydantic import ValidationError
@@ -57,8 +37,12 @@ def build() -> int:
 
 
 def main() -> int:
-    # Parse a minimal subcommand — no dependency on argparse so the module
-    # stays light. No arg runs both capture lanes; named verbs scope it.
+    """Run `bb [subcommand]`; no subcommand runs one full capture pass (cron).
+
+    Subcommands: pull, build, peck, prune, drain, lint, tidy, stale, ask,
+    touch and anki. Each is also exposed as its own `uv run <verb>` script
+    where pyproject.toml names one.
+    """
     args = sys.argv[1:]
     subcommand = args[0] if args else None
 

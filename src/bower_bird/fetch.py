@@ -1,10 +1,3 @@
-"""Fetch a URL and extract lightweight page metadata or a readable body.
-
-The shelve lane renders a link's full readable body (fetch_rendered) — it's
-inlined verbatim under the source node's `## Body` — plus a flat excerpt to
-ground the distillation. PDFs get text-extracted (fetch_pdf); tool links get
-metadata only (fetch)."""
-
 import ipaddress
 import socket
 from io import BytesIO
@@ -22,9 +15,7 @@ _MAX_BODY_CHARS = 6000
 # Cap for rendered inbox docs — enough for a typical article without going huge.
 _MAX_RENDER_CHARS = 40_000
 
-# Domains we KNOW httpx can't render — JS-/login-walled, so a plain GET yields
-# useless metadata (see daily notes 2026-06-24). These skip fetch entirely and
-# route to the clip queue: open in a browser + Web Clipper instead.
+# Walled domains: skip fetch and go to the clip queue or the tweet resolver.
 _NEEDS_BROWSER = ("x.com", "twitter.com", "t.co")
 
 # PDF lane caps: keep downloads and Haiku grounding bounded.
@@ -33,11 +24,10 @@ _MAX_PDF_PAGES = 50
 
 
 def is_pdf_url(url: str) -> bool:
-    """True if this URL points at a PDF we should text-extract, not render.
+    """Return True when the URL shape marks a PDF to extract as text.
 
-    ponytail: URL shape only (.pdf path or arXiv /pdf/) — a PDF served from an
-    extensionless URL falls through to the HTML path; add a Content-Type sniff
-    if that ever bites.
+    Matches a ``.pdf`` path or arXiv ``/pdf/`` only. A PDF served from an
+    extensionless URL takes the HTML path.
     """
     parts = urlparse(url)
     return parts.path.lower().endswith(".pdf") or (
@@ -46,7 +36,7 @@ def is_pdf_url(url: str) -> bool:
 
 
 def needs_clipping(url: str) -> bool:
-    """True if this URL must be captured via the browser Web Clipper, not httpx."""
+    """Return True when httpx cannot read the URL's domain."""
     host = urlparse(url).netloc.lower()
     return any(host == d or host.endswith("." + d) for d in _NEEDS_BROWSER)
 
@@ -55,7 +45,7 @@ _MAX_REDIRECTS = 5
 
 
 def is_public_host(host: str) -> bool:
-    """True only if every IP `host` resolves to is publicly routable.
+    """Return True only when every IP that ``host`` resolves to is public.
 
     SSRF guard: URLs come from untrusted Telegram messages, so a fetch must not
     be steerable at localhost, LAN devices, or cloud-metadata (169.254.169.254).
@@ -82,14 +72,12 @@ def is_public_host(host: str) -> bool:
 
 
 def safe_get(url: str, timeout: float) -> httpx.Response:
-    """GET with an SSRF guard, following redirects manually so every hop is
-    re-validated (a public URL can 30x-redirect into internal space).
+    """GET a URL behind an SSRF guard, checking every redirect hop.
 
-    Raises ValueError on a non-http scheme or a non-public host at any hop.
-
-    ponytail: small TOCTOU/DNS-rebind residual — getaddrinfo here and httpx's
-    own resolution are separate lookups. Acceptable for a personal laptop tool;
-    upgrade path is pinning the validated IP into the connection.
+    A public URL can redirect into internal space, so redirects are followed
+    by hand. Raises ValueError on a non-http scheme or a non-public host at
+    any hop. A small DNS rebinding gap remains, since getaddrinfo here and
+    httpx's own lookup are separate.
     """
     with httpx.Client(
         headers={"User-Agent": _UA}, timeout=timeout, follow_redirects=False
@@ -109,10 +97,10 @@ def safe_get(url: str, timeout: float) -> httpx.Response:
 
 
 def follow_redirect(url: str, timeout: float) -> str:
-    """Follow HTTP redirects (HEAD, not GET — only the final URL is wanted)
-    and return it. Same SSRF guard as safe_get, re-checked at every hop.
-    Any failure (non-http scheme, blocked host, network error, too many
-    redirects) returns `url` unchanged — never raises."""
+    """Return the final URL after HEAD redirects, under safe_get's guard.
+
+    Any failure returns ``url`` unchanged; the function never raises.
+    """
     with httpx.Client(
         headers={"User-Agent": _UA}, timeout=timeout, follow_redirects=False
     ) as client:
@@ -135,6 +123,7 @@ def follow_redirect(url: str, timeout: float) -> str:
 
 
 def meta_content(soup: BeautifulSoup, *names: str) -> str:
+    """Return the first non-empty ``<meta>`` content among ``names``."""
     for name in names:
         tag = soup.find("meta", attrs={"property": name}) or soup.find(
             "meta", attrs={"name": name}
@@ -171,6 +160,7 @@ def render_markdown(soup: BeautifulSoup) -> str:
 
 
 def fetch(url: str, timeout: float) -> PageMeta:
+    """Fetch a page's title, description and rendered markdown body."""
     try:
         resp = safe_get(url, timeout)
         resp.raise_for_status()

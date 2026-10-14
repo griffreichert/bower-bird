@@ -61,6 +61,7 @@ def refetched_body(config: Config, url: str) -> str:
 
 
 def main() -> int:
+    """Inline missing bodies into source nodes; ``--dry-run`` only reports."""
     dry_run = "--dry-run" in sys.argv[1:]
     config = Config()
     sources = sorted(config.sources_dir.glob("*.md"))

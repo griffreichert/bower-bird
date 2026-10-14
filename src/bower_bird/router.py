@@ -1,20 +1,3 @@
-"""Router: tell the lanes apart by *how* the message was sent.
-
-| Send                          | Lane     |
-| ------------------------------ | -------- |
-| `tool:` + link                 | tool     |
-| any link (bare, or +note)      | shelve   |
-| no link, real text             | paste    |
-| no link, nothing usable        | no_link  |
-
-Antilibrary model (2026-07-13): every capture is shelved immediately, so
-there's no read-status fork left to parse for. A link — bare or with a note —
-is always the `shelve` lane; the note (if any) rides along as a seed thought
-for distillation. Text with no link at all is pasted prose and becomes its own
-source node (the `paste` lane). An explicit `tool:` prefix overrides
-everything — it's a keep-for-later shelf item, not knowledge.
-"""
-
 import re
 
 from bower_bird.schema import Lane, Parsed
@@ -24,12 +7,18 @@ _TOOL_PREFIX_RE = re.compile(r"^\s*tool\s*:", re.IGNORECASE)
 
 
 def strip_trailing_punct(url: str) -> str:
+    """Strip punctuation a sentence leaves stuck to the end of a URL."""
     return url.rstrip(").,;]>”\"'")
 
 
 def parse(text: str) -> Parsed:
-    # `tool:` is an explicit override — a shelf item, never knowledge. A tool
-    # note without a link isn't useful to collect, so it falls back to NO_LINK.
+    """Route a Telegram send by its shape.
+
+    A ``tool:`` prefix with a link goes to the tools shelf and overrides
+    everything; without a link it parks as no_link. Any other link, bare or
+    with a note, is shelved, and the note rides along as a seed thought. Text
+    with no link is pasted prose and becomes its own source node.
+    """
     if _TOOL_PREFIX_RE.match(text):
         body = _TOOL_PREFIX_RE.sub("", text, count=1)
         match = _URL_RE.search(body)

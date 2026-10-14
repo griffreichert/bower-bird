@@ -12,9 +12,7 @@ from bower_bird.llm import rewrite_card, write_cards
 from bower_bird.recall import load_claims
 from bower_bird.schema import AnkiCard, AnkiNote, Claim
 
-# The one deck and the one note type bower-bird owns inside Anki. Every query
-# is scoped to the note type, so no other note in the collection is ever read
-# or written — the Anki half of the containment boundary.
+# The deck and note type bb owns; every query is scoped to the note type.
 DECK = "BowerBird"
 MODEL = "BowerBird"
 FIELDS = ["Front", "Back", "Claim", "Source", "Url", "Obsidian", "ClaimKey"]
@@ -112,8 +110,10 @@ def ensure_deck(config: Config) -> None:
 
 
 def note_payload(config: Config, key: str, claim: Claim, front: str, back: str) -> dict:
-    """Build the AnkiConnect note for one claim. Text is escaped because Anki
-    stores field values as HTML."""
+    """Build the AnkiConnect note for one claim.
+
+    Text is escaped, since Anki stores field values as HTML.
+    """
     vault_root = config.vault_path.parent
     node_path = config.sources_dir.relative_to(vault_root) / claim.node
     obsidian = (
@@ -276,8 +276,9 @@ def rework(
 def render_recall_map(
     claims: dict[str, Claim], notes: dict[str, AnkiNote], cards: list[AnkiCard]
 ) -> str | None:
-    """Roll card state up through the graph's concept links. None when no card
-    has been reviewed yet (nothing worth surfacing).
+    """Roll card state up through the graph's concept links.
+
+    Returns None when no card has been reviewed yet.
 
     Concepts come from the graph, not from Anki's tags, so the map follows the
     current links. Weakest first: most lapses, then shortest mean interval.

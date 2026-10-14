@@ -1,11 +1,3 @@
-"""Graph-node writes: source notes (sources/), leaf notes (people/tools), and
-the concept-graph plumbing that backs them — `[[links]]`, the `_index.md`
-catalog, the `_log.md` activity log.
-
-Every write here goes through `ingest.assert_writable` (the boundary guard
-stays in `ingest.py`; this module never bypasses it).
-"""
-
 import uuid
 from pathlib import Path
 
@@ -48,14 +40,15 @@ tags:
 def append_link(
     config: Config, path: Path, target_title: str, heading: str = _LINKS_HEADING
 ) -> None:
-    """Append `- [[target]]` under `heading`. Strictly additive: never edits
-    existing text. When the note doesn't exist yet, seed it with a well-formed
-    concept-note header first (so auto-created notes aren't bare stubs).
-    Idempotent — a link already present under ANY heading is not duplicated.
+    """Append ``- [[target]]`` under ``heading``, never editing existing text.
+
+    A missing note is seeded with a concept note header first. A link already
+    present under any heading is not duplicated.
 
     `heading` divides the two kinds of link a node carries: `## Links` for
     sibling concepts, `## Sources` for the source/leaf notes you click to read
-    the origin. A given target is placed once, in the heading passed here."""
+    the origin. A given target is placed once, in the heading passed here.
+    """
     assert_writable(config, path)
     line = f"- [[{target_title}]]"
     if path.exists():
@@ -76,10 +69,6 @@ def append_link(
     path.write_text(out, encoding="utf-8")
 
 
-# --------------------------------------------------------------------------- #
-# shelve lane (every capture — source note in sources/, links into notes/)
-# --------------------------------------------------------------------------- #
-
 _SOURCE_FRONTMATTER = """\
 ---
 id: {source_id}
@@ -94,9 +83,12 @@ source: "{url}"
 
 
 def build_source_tags(marks: Marks) -> str:
-    """`source`, plus `dig` when the reader flagged something to go deeper on,
-    plus `frozen` when the reader pinned the node (`#frozen`/`#promote`) — prose
-    immutable, links stay open."""
+    """Return the frontmatter tag list for a source note.
+
+    Always ``source``; ``dig`` when the reader flagged something to go deeper
+    on; ``frozen`` when the reader pinned the node, which freezes prose and
+    leaves links open.
+    """
     tags = ["source"]
     if marks.dig or marks.questions:
         tags.append("dig")
@@ -114,13 +106,11 @@ def create_source_note(
     marks: Marks | None = None,
     full_body: str = "",
 ) -> Path | None:
-    """Write a source note into sources/ and assert links into the graph (#13
-    schema): frontmatter (id/title/source/author/created/tags), then
-    Key ideas / Seed thoughts (if any) / Links / marks headings / Body.
+    """Write a source note into sources/ and assert its links into the graph.
 
-    Antilibrary model — every capture is shelved immediately, no read gate.
-    `note` is the human's seed thought sent alongside the link (if any);
-    `marks` are the highlights/dig/questions/links pulled from a clip.
+    Writes frontmatter, then Key ideas, Seed thoughts, Links, the marks
+    headings and Body. ``note`` is the human's seed thought sent alongside the
+    link, if any; `marks` are the highlights/dig/questions/links pulled from a clip.
     `full_body` is the source's full rendered body, inlined verbatim under
     `## Body` — the node is canonical and self-contained; `archive/` is a cold
     recycle bin, not the record of truth. Returns the source-note path, or
@@ -128,10 +118,7 @@ def create_source_note(
     """
     marks = marks or Marks()
     config.sources_dir.mkdir(parents=True, exist_ok=True)
-    # Prefer the model's fluff-free title for the graph node; fall back to the
-    # raw page title if the model gave nothing.
-    # 64-char clamp backstops the schema's max_length when the fallback is
-    # the raw page title (e.g. a long article headline).
+    # Clamp to 64 chars: a raw page title has no schema max_length.
     display_title = ((plan.concise_title or meta.title).strip() or meta.title)[:64]
     source_title = safe_filename(display_title)
     path = config.sources_dir / f"{source_title}.md"
@@ -155,9 +142,7 @@ def create_source_note(
     author = yaml_scalar(meta.author or plan.author)
     author_line = f'author: "{author}"\n' if author else ""
 
-    # Every source is a peck card (antilibrary model, #18) — mint a stable id
-    # up front so the review store can key on it. `peck` enrols by scanning
-    # this id, not by any write here (no ingest-side coupling).
+    # peck enrols sources by scanning this id.
     source_id = str(uuid.uuid4())
 
     parts = [
@@ -197,10 +182,7 @@ def create_source_note(
 
     path.write_text("\n".join(parts), encoding="utf-8")
 
-    # Assert reciprocal links into the concept graph (additive only). Link into
-    # an existing bower concept where it lives; new ones land flat at the bowers
-    # root for Tier-2 to file. This source lands under the concept's `## Sources`
-    # (click-to-read-origin), kept apart from its sibling-concept `## Links`.
+    # New concepts land flat at the bowers root for weave to file.
     for target in targets:
         append_link(
             config, find_concept_path(config, target), source_title, _SOURCES_HEADING
@@ -208,10 +190,6 @@ def create_source_note(
 
     return path
 
-
-# --------------------------------------------------------------------------- #
-# entity leaf notes (people + tools — unquizzed brain leaves)
-# --------------------------------------------------------------------------- #
 
 _LEAF_FRONTMATTER = """\
 ---
@@ -256,9 +234,7 @@ def create_leaf_note(
             body = f"{body}\n{entity.note.strip()}\n"
         path.write_text(body, encoding="utf-8")
 
-    # Link into the concept graph (reciprocal, additive) + back to the source.
-    # The leaf lists its concepts under `## Links`; on the concept + source it is
-    # itself a reference node, so it lands under their `## Sources`.
+    # The leaf lists concepts under ## Links and sits under their ## Sources.
     for topic in entity.topics:
         append_link(config, path, topic)
         append_link(config, find_concept_path(config, topic), safe, _SOURCES_HEADING)

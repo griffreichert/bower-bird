@@ -1,19 +1,12 @@
-"""Pydantic data contracts that cross a boundary: router output, LLM
-structured output. Stateful classes with behavior (e.g. `ReviewStore`) stay in
-their own module — this file is contracts only.
-"""
-
 from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# --------------------------------------------------------------------------- #
-# router.py — how a Telegram send was routed
-# --------------------------------------------------------------------------- #
-
 
 class Lane(StrEnum):
+    """How a Telegram send is handled, decided by its shape."""
+
     SHELVE = "shelve"  # any link (bare or +note) — becomes a source node now
     PASTE = "paste"  # pasted prose, no link — becomes a source node, sender as author
     TOOL = "tool"  # keep-for-later shelf (a plugin/repo/tool), not knowledge
@@ -21,6 +14,8 @@ class Lane(StrEnum):
 
 
 class Parsed(BaseModel):
+    """A routed Telegram send: its lane, its link and the text around it."""
+
     model_config = ConfigDict(frozen=True)
 
     lane: Lane
@@ -28,12 +23,9 @@ class Parsed(BaseModel):
     note: str  # the user's surrounding note ("why") / seed thought / pasted text
 
 
-# --------------------------------------------------------------------------- #
-# fetch.py — page metadata (title/description/excerpt)
-# --------------------------------------------------------------------------- #
-
-
 class PageMeta(BaseModel):
+    """What a fetch or a clip yields about one page."""
+
     model_config = ConfigDict(frozen=True)
 
     url: str
@@ -44,18 +36,17 @@ class PageMeta(BaseModel):
 
     @property
     def is_thin(self) -> bool:
-        """Fetch came back empty — no real title and no description. The page is
-        likely JS-/login-walled; route to the clip queue instead of writing a
-        broken inbox doc."""
+        """True when the fetch found no real title and no description.
+
+        Such a page is likely walled behind JS or a login, so it goes to the
+        clip queue in place of a broken source note.
+        """
         return not self.description and (not self.title or self.title == self.url)
 
 
-# --------------------------------------------------------------------------- #
-# resolve.py — a resolved tweet's text (+ reply hint / quote / article)
-# --------------------------------------------------------------------------- #
-
-
 class TweetText(BaseModel):
+    """A resolved tweet, with any quoted tweet and native X Article body."""
+
     model_config = ConfigDict(frozen=True)
 
     id: str
@@ -70,15 +61,10 @@ class TweetText(BaseModel):
     article_body: str = ""  # article content, rendered to markdown
 
 
-# --------------------------------------------------------------------------- #
-# llm.py — synthesize_clipping structured output
-# --------------------------------------------------------------------------- #
-
-
 class EntityRef(BaseModel):
-    """A named thing mentioned in a source that deserves its own graph node —
-    a tool (repo/library/plugin) or a person (author/creator/figure). Filed as
-    an unquizzed leaf note, linked to concepts; NOT a bower, never quizzed.
+    """A tool or person named in a source that earns its own leaf note.
+
+    Leaf notes link to concepts and are never bowers and never quizzed.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -179,13 +165,8 @@ class ClippingPlan(BaseModel):
     )
 
 
-# --------------------------------------------------------------------------- #
-# llm.py — generate_question / judge_answer structured output
-# --------------------------------------------------------------------------- #
-
-
 class QuizQuestion(BaseModel):
-    """A freshly-generated `peck` question for one source node (#18).
+    """A freshly generated `peck` question for one source node.
 
     Generated at quiz time (never stored) so a node's question doesn't
     degrade into recognition after a few reps. Depth scales with the
@@ -204,9 +185,8 @@ class JudgeVerdict(BaseModel):
     """LLM-as-judge grade for one `peck` recall answer.
 
     Grades the learner's typed answer against the node's key ideas (+ seed
-    thought) as ground truth, so the quiz loop is a real eval loop, not
-    self-assessment. The full node body is never sent — only the distilled
-    key ideas (#18).
+    thought) as ground truth, so the quiz loop is a real eval loop. Only the
+    distilled key ideas are sent, never the full node body.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -220,12 +200,6 @@ class JudgeVerdict(BaseModel):
         description="One or two lines addressed to the learner: what they nailed "
         "and what they missed. Grade the understanding, not the wording."
     )
-
-
-# --------------------------------------------------------------------------- #
-# review.py — spaced-rep review state (ReviewStore, the stateful class, stays
-# in review.py; these are the frozen per-node/per-event data shapes it holds)
-# --------------------------------------------------------------------------- #
 
 
 class ReviewEntry(BaseModel):
@@ -282,19 +256,18 @@ class Review(BaseModel):
 
     @property
     def is_teach(self) -> bool:
-        """Teach-first card: show key ideas, no question/judge/grade. True until
-        the card has been taught once (``taught``) or graded (``reviews``)."""
+        """True until the card has been taught once or graded.
+
+        A teach card shows the key ideas with no question, judge or grade.
+        """
         return not self.reviews and not self.taught
 
 
-# --------------------------------------------------------------------------- #
-# recall.py — bb ask's ranked claim contract (stable: consumed by an MCP shim)
-# --------------------------------------------------------------------------- #
-
-
 class Claim(BaseModel):
-    """One retrievable claim — a source's key-idea bullet, or a concept's
-    synthesized bullet. The unit `bb ask` ranks over."""
+    """One retrievable claim, the unit `bb ask` ranks over.
+
+    Either a source's key idea bullet or a concept's synthesized bullet.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -308,14 +281,11 @@ class Claim(BaseModel):
     topics: list[str] = Field(default_factory=list, description="Frontmatter topics.")
 
 
-# --------------------------------------------------------------------------- #
-# llm.py — write_cards / rewrite_card structured output
-# --------------------------------------------------------------------------- #
-
-
 class CardDraft(BaseModel):
-    """One Anki card written for one claim. The claim itself is shown verbatim
-    under the answer, so the draft only carries the question and a short answer.
+    """One Anki card written for one claim.
+
+    The claim shows verbatim under the answer, so the draft carries only the
+    question and a short answer.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -339,11 +309,6 @@ class CardPlan(BaseModel):
     cards: list[CardDraft] = Field(
         description="One card per claim, same order as the claims."
     )
-
-
-# --------------------------------------------------------------------------- #
-# anki.py — AnkiConnect responses (external input)
-# --------------------------------------------------------------------------- #
 
 
 class AnkiNote(BaseModel):

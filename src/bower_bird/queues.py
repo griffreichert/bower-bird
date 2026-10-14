@@ -1,19 +1,7 @@
-"""Flat-file shelf/queue appends: the clip queue (`to-clip.md`), the tools
-shelf (`tools.md`), and the catch-all Telegram inbox (`_inbox.md`).
-
-Unlike `nodes.py` these never touch the concept graph — each is a single
-append-only markdown file. Every write here goes through
-`ingest.assert_writable` (the boundary guard stays in `ingest.py`).
-"""
-
 from datetime import datetime
 
 from bower_bird.config import Config
 from bower_bird.ingest import assert_writable, today_iso
-
-# --------------------------------------------------------------------------- #
-# clip queue (links httpx can't read — open in a browser + Web Clipper)
-# --------------------------------------------------------------------------- #
 
 _TO_CLIP_HEADER = """\
 ---
@@ -52,10 +40,6 @@ def append_to_clip_queue(config: Config, url: str, title: str = "") -> bool:
         fh.write(entry)
     return True
 
-
-# --------------------------------------------------------------------------- #
-# tools shelf (plugins/repos/tools to keep for later — not knowledge)
-# --------------------------------------------------------------------------- #
 
 _TOOLS_HEADER = """\
 ---
@@ -101,10 +85,6 @@ def append_to_tools(
         fh.write(entry)
     return True
 
-
-# --------------------------------------------------------------------------- #
-# catch-all inbox (Telegram messages we couldn't process)
-# --------------------------------------------------------------------------- #
 
 _TELEGRAM_INBOX_HEADER = """\
 ---

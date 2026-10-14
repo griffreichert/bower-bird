@@ -43,7 +43,8 @@ def read_index(config: Config) -> str:
 
     This is the ONLY link-candidate source `build` reads — a single compact
     catalog file (one line per page) — so per-item cost stays bounded as the
-    graph grows, instead of rglob-ing and opening every page to read its title."""
+    graph grows, instead of rglob-ing and opening every page to read its title.
+    """
     path = config.index_path
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
@@ -58,7 +59,8 @@ def upsert_index_line(
 
     `insert_only=True` inserts a line only when the title is absent and leaves an
     existing line untouched — used for concept stubs at capture, so a thin
-    capture-time line never clobbers a richer one weave has already written."""
+    capture-time line never clobbers a richer one weave has already written.
+    """
     path = config.index_path
     assert_writable(config, path)
     line = f"- [[{title}]] · {category} · {oneline}".rstrip(" ·")
@@ -86,15 +88,17 @@ _WORD_RE = re.compile(r"[a-z0-9]+")  # term-frequency pass, paired with tokenize
 
 
 def inbound_link_counts(config: Config) -> Counter[str]:
-    """Per concept title, how many distinct notes wikilink to it — sources AND
-    the tool/people leaves. A concept is any title with a note under
-    `brain/bowers/`. This is `candidate_index`'s popularity signal.
+    """Count the distinct notes that wikilink to each concept title.
+
+    Sources and the tool and people leaves all count. A concept is any title
+    with a note under `brain/bowers/`. This is `candidate_index`'s popularity
+    signal.
 
     Counts leaves deliberately, and that is the ONLY thing that should. A
     concept fed by seven tool leaves is a well-connected hub even with one
     source, but a sources-only count read it as an orphan — `Data extraction`
-    scored 1 against 8 real inbound links and fell below the popularity cutoff
-    (measured 2026-07-28, the Harvey miss). Synthesis eligibility is the
+    scored 1 against 8 real inbound links and fell below the popularity
+    cutoff. Synthesis eligibility is the
     opposite question and keeps its own sources-only counter,
     `lint.inbound_source_counts`: INVARIANTS wants two *sources* to converge,
     and tool leaves carry no claims to converge.
@@ -117,13 +121,14 @@ def inbound_link_counts(config: Config) -> Counter[str]:
 
 
 def candidate_index(config: Config, llm: LLMSettings, query: str) -> str:
-    """The link-candidate list `synthesize_clipping` sees: relevance-first,
-    popularity-backed — not the whole `_index.md` (~320 titles on the live
-    vault), and not popularity-ranked alone.
+    """Return the link candidates `synthesize_clipping` sees for one source.
+
+    Relevance first, backed by popularity. The whole `_index.md` holds about
+    320 titles, and popularity alone buries relevant concepts.
 
     Popularity is an irrelevance prior: ranking candidates purely by
     feeding-source count buries low-count-but-on-topic concepts below the
-    cut. Measured 2026-07-28 — the source "Scaling document processing at
+    cut. The source "Scaling document processing at
     Harvey" got topics like `RAG and retrieval` / `Scaling laws` /
     `Always-on systems` because every actually-relevant concept (`Data
     extraction`, `Entity extraction`, `AI infrastructure`, `Legal AI tools`)
@@ -136,8 +141,8 @@ def candidate_index(config: Config, llm: LLMSettings, query: str) -> str:
       leans on those tokens (mean log term frequency). Coverage alone
       saturates — a token appearing once anywhere in a 15k-char body scores
       the same as one appearing fifty times, so every two-word title matched
-      perfectly and ties fell back to popularity (measured 2026-07-28: ~8
-      titles tied at 1.0 per source). Term frequency is what separates
+      perfectly and ties fell back to popularity (about 8 titles tied at 1.0
+      per source). Term frequency is what separates
       `Data extraction` from `Writing systems for AI` on the Harvey source.
       Sort by (score, inbound-link count) descending; take
       `llm.topic_relevance_limit`.
@@ -149,7 +154,7 @@ def candidate_index(config: Config, llm: LLMSettings, query: str) -> str:
 
     Also with every concept as a candidate, the "prefer an existing title"
     instruction doesn't survive the list length and Haiku coins new ones
-    instead — 221 singleton topics, measured 2026-07-25. Capping keeps the
+    instead — 221 singleton topics on the live vault. Capping keeps the
     preferred targets few enough that Haiku actually reuses them.
     """
     full_text = read_index(config)

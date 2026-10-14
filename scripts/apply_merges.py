@@ -1,5 +1,6 @@
-"""Apply approved merge pairs from `notes/2026-07-25-merge-map.md`
-(`scripts/propose_merges.py`'s output) to the live vault.
+"""Apply approved merge pairs from the merge map to the live vault.
+
+The map is `scripts/propose_merges.py`'s output.
 
 Per applied pair (loser -> winner):
   1. Append the loser's `## Sources` entries onto the winner via
@@ -25,8 +26,9 @@ Run: uv run python scripts/apply_merges.py [--map PATH] [--tier exact|high]
 import argparse
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
+
+from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -49,8 +51,9 @@ _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _TIER_ORDER = ("exact", "high", "review")
 
 
-@dataclass(frozen=True)
-class MergePair:
+class MergePair(BaseModel, frozen=True):
+    """One approved merge: the loser concept folds into the winner."""
+
     loser: str
     winner: str
     tier: str
@@ -61,9 +64,11 @@ class MergePair:
 
 
 def parse_map(text: str) -> list[MergePair]:
-    """Parse `- [ ] [[loser]] -> [[winner]]  (tier, sim=X, shared=N, sources
-    L->W)` lines. The tier is read from the line itself, not the section
-    header it sits under — a hand-moved line still applies correctly."""
+    """Parse the map's ``- [ ] [[loser]] -> [[winner]] (tier, ...)`` lines.
+
+    The tier comes from the line itself, so a line moved by hand into another
+    section still applies correctly.
+    """
     return [
         MergePair(
             loser=m.group(1),
@@ -79,8 +84,7 @@ def parse_map(text: str) -> list[MergePair]:
 
 
 def loser_source_stems(loser_text: str) -> list[str]:
-    """Wikilink targets under the loser's own `## Sources` heading — the
-    feeding sources to carry over to the winner."""
+    """Return the wikilinks under the loser's ``## Sources``, to carry over."""
     m = _SOURCES_SECTION_RE.search(loser_text)
     if not m:
         return []
@@ -92,22 +96,26 @@ def _wikilink_pattern(title: str) -> re.Pattern[str]:
 
 
 def _topic_line_pattern(title: str) -> re.Pattern[str]:
-    # A source's frontmatter `topics:` block is a bare-string YAML list (not
-    # wikilinked) that must track `## Links` 1:1 or `bb lint`'s topic-drift
-    # check fires. Whole-line match only, so an unrelated line ending in the
-    # same words is never touched.
+    """Match a whole frontmatter ``topics:`` line naming ``title``.
+
+    Topics must track ``## Links`` one to one or `bb lint` reports drift.
+    Matching the whole line leaves unrelated lines with the same words alone.
+    """
     return re.compile(rf"^(\s*- ){re.escape(title)}\s*$", re.MULTILINE)
 
 
 def count_hits(text: str, title: str) -> int:
+    """Count wikilinks and topic lines naming ``title``."""
     return len(_wikilink_pattern(title).findall(text)) + len(
         _topic_line_pattern(title).findall(text)
     )
 
 
 def files_linking_to(config: Config, title: str) -> list[tuple[Path, int]]:
-    """brain/*.md files referencing `title` — a `[[wikilink]]` (any alias) or a
-    frontmatter `topics:` bare-string entry — with match count."""
+    """Return brain/ files that name ``title``, with their match counts.
+
+    A match is a wikilink under any alias or a frontmatter topic line.
+    """
     hits = []
     if not config.brain_dir.is_dir():
         return hits
@@ -119,6 +127,7 @@ def files_linking_to(config: Config, title: str) -> list[tuple[Path, int]]:
 
 
 def rewrite_links(config: Config, path: Path, loser: str, winner: str) -> None:
+    """Point every link and topic line in ``path`` from loser to winner."""
     text = path.read_text(encoding="utf-8")
     new_text = _wikilink_pattern(loser).sub(
         lambda m: f"[[{winner}{m.group(1) or ''}]]", text
@@ -132,6 +141,7 @@ def rewrite_links(config: Config, path: Path, loser: str, winner: str) -> None:
 
 
 def apply_pair(config: Config, pair: MergePair, *, apply: bool) -> None:
+    """Print one merge's plan, and carry it out when ``apply`` is set."""
     loser_path = nodes.find_concept_path(config, pair.loser)
     winner_path = nodes.find_concept_path(config, pair.winner)
     print(f"[{pair.tier}] [[{pair.loser}]] -> [[{pair.winner}]]")
@@ -163,6 +173,7 @@ def apply_pair(config: Config, pair: MergePair, *, apply: bool) -> None:
 
 
 def main() -> int:
+    """Apply the map's pairs up to the chosen tier; dry run by default."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--map", type=Path, default=DEFAULT_MAP)
     parser.add_argument("--tier", choices=_TIER_ORDER, default="exact")

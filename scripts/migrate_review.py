@@ -148,6 +148,7 @@ def run_migration(config: Config) -> tuple[int, int, int]:
 
 
 def main() -> int:
+    """Migrate the review store to the current schema."""
     try:
         config = Config()
     except ValidationError as exc:

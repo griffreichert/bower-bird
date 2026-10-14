@@ -1,20 +1,3 @@
-"""Anthropic calls. First-party API, Haiku by default.
-
-Two jobs, both small and cheap:
-
-- `describe_link`  — one-line "what is it" metadata for the tools lane.
-  Grounded ONLY on page metadata (title/description); never the body. This is
-  identification, not a summary.
-- `synthesize_clipping` — every shelve (antilibrary: everything sent is
-  shelved immediately, no read gate) turns a source + optional seed thought
-  into claim-shaped key ideas and a set of *proposed* [[backlinks]] drawn from
-  existing evergreen notes.
-
-The clipping contract is a pydantic model in `schema.py`; `messages.parse`
-derives the JSON schema from it and validates the response back into the
-model.
-"""
-
 import anthropic
 from anthropic import omit
 
@@ -30,14 +13,18 @@ from bower_bird.schema import (
 
 
 def key_ideas_block(key_ideas: list[str], seed: str) -> str:
+    """Render key ideas and the reader's seed thought as prompt ground truth."""
     ideas = "\n".join(f"- {idea}" for idea in key_ideas) if key_ideas else "(none)"
     seed_line = f"\nReader's own note: {seed}" if seed else ""
     return f"Key ideas:\n{ideas}{seed_line}"
 
 
 def depth_instruction(box: int, linked_titles: list[str]) -> str:
-    """Depth scales with Leitner box (#18): 0-1 recall, 2-3 explain-simply,
-    4-5 application/connection (referencing linked nodes when available)."""
+    """Return the question depth instruction for a Leitner box.
+
+    Boxes 0 and 1 ask for recall, 2 and 3 for a plain restatement, and 4 and 5
+    for application or a connection to linked nodes when there are any.
+    """
     if box <= 1:
         return "Ask a plain recall question about one of the key ideas."
     if box <= 3:
@@ -99,8 +86,8 @@ def judge_answer(
 ) -> JudgeVerdict:
     """Grade a peck answer against the node's key ideas. LLM-as-judge (Haiku).
 
-    Ground truth is the distilled key ideas (+ reader seed thought), not the
-    full node body (#18). At application depth (box 4-5, when linked_titles is
+    Ground truth is the distilled key ideas and the reader's seed thought; the
+    full node body is never sent. At application depth (box 4-5, when linked_titles is
     given) connection answers referencing a linked title get credit too.
     """
     linked_block = ""
@@ -202,11 +189,12 @@ def rewrite_card(
 
 
 def anthropic_client() -> anthropic.Anthropic:
-    # Reads ANTHROPIC_API_KEY from the environment.
+    """Return a client that reads ANTHROPIC_API_KEY from the environment."""
     return anthropic.Anthropic()
 
 
 def first_text(message) -> str:
+    """Return the first text block of a response, skipping thinking blocks."""
     for block in message.content:
         if block.type == "text":
             return block.text
@@ -214,6 +202,7 @@ def first_text(message) -> str:
 
 
 def describe_link(meta: PageMeta, llm: LLMSettings) -> str:
+    """Label a page in one short line from its metadata; fall back to its title."""
     prompt = (
         "Identify what this web page is in ONE short line (under 15 words). "
         "State the type and topic (e.g. 'Blog post on Rust async internals', "
@@ -244,10 +233,12 @@ def synthesize_clipping(
     body_urls: list[str] | None = None,
     person_anchors: list[str] | None = None,
 ) -> ClippingPlan:
-    # candidate_index is a relevance-ranked subset of `_index.md`, most-
-    # relevant-to-this-source first, each line `- [[title]] · category ·
-    # one-liner` (one-liner may be empty). It is the single, compact
-    # link-candidate + category source (no per-page reads).
+    """Plan a source note: title, key ideas, links, category and entities.
+
+    ``candidate_index`` is the relevance ranked slice of ``_index.md`` from
+    ``catalog.candidate_index``, the only link and category source the model
+    sees. A refusal falls back to a minimal plan built from the page title.
+    """
     candidates = candidate_index.strip() or "(none yet)"
     highlights = highlights or []
     body_urls = body_urls or []

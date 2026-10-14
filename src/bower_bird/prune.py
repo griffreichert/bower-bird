@@ -1,19 +1,3 @@
-"""`bb prune` — manual garbage-collection of the cold `archive/`.
-
-`archive/` holds every processed clip original (moved there at capture, never
-deleted). It's cold: not in `_index.md`, not read by build/dive/weave — pure disk
-cost. This deletes husks older than `config.archive_ttl_days`, but ONLY when the
-content is captured in the graph (a matching source node, or the source URL is in
-processed-state). Orphans — husks with no graph node — are held back and flagged;
-those are the only ones whose deletion would actually lose knowledge (e.g. a node
-weave renamed, or a never-built clip). Manual + confirmed, never crond;
-`state.json` is untouched so nothing is ever re-processed.
-
-Since the antilibrary rewrite (#25) the source node inlines the full body, so
-archive/ is a pure recycle bin — the let-go sweep (unread reading-room decay)
-retired with the reading rooms themselves.
-"""
-
 import re
 import time
 from pathlib import Path
@@ -21,21 +5,23 @@ from pathlib import Path
 from bower_bird.config import Config
 from bower_bird.state import State
 
-# inbox.archive_clip appends `.YYYYmmdd-HHMMSS` on a filename collision — strip
-# it to recover the stem the source note was written under.
+# Matches the `.YYYYmmdd-HHMMSS` stamp inbox.archive_clip adds on a collision.
 _STAMP_SUFFIX = re.compile(r"\.\d{8}-\d{6}$")
 _SOURCE_URL = re.compile(r'^source:\s*"?([^"\n]+?)"?\s*$', re.MULTILINE)
 
 
 def age_days(path: Path, now: float) -> float:
+    """Return the file's age in days from its mtime."""
     return (now - path.stat().st_mtime) / 86400
 
 
 def base_stem(path: Path) -> str:
+    """Return the stem without any collision stamp, the source note's stem."""
     return _STAMP_SUFFIX.sub("", path.stem)
 
 
 def read_text(path: Path) -> str:
+    """Return the file's text, or an empty string when it cannot be read."""
     try:
         return path.read_text(encoding="utf-8")
     except OSError:
@@ -43,23 +29,20 @@ def read_text(path: Path) -> str:
 
 
 def source_url(path: Path) -> str:
+    """Return the husk's frontmatter ``source:`` URL, or an empty string."""
     m = _SOURCE_URL.search(read_text(path))
     return m.group(1).strip() if m else ""
 
 
 def has_graph_node(config: Config, state: State, path: Path) -> bool:
-    """True when this husk's content is captured in the graph — safe to delete.
+    """Return True when the husk's content is captured in the graph.
 
-    Primary: a source note exists under the same stem (husk + note share the
-    concise title — new captures feed the same display_title to both). Fallback:
-    the husk's `source:` URL is in processed-state (catches dup husks archived
-    under a collision stamp).
-
-    # ponytail: exact stem/url match only. Legacy husks (pre-URL-state, or an
-    # older archive name that predates the concise-title rename) fail both and
-    # fall to held-back — reviewed by hand, never auto-deleted. Deliberate: a
-    # false hold-back is safe, a false delete loses data. Add fuzzy title match
-    # only if the held-back pile gets annoying.
+    A source note under the same stem counts, since capture writes the husk
+    and the note under one title. Failing that, the husk's ``source:`` URL in
+    processed state counts, which catches duplicates archived under a
+    collision stamp. Matching is exact only: a husk that fails both is held
+    back for a human, because a false hold back is safe and a false delete
+    loses data.
     """
     if (config.sources_dir / f"{base_stem(path)}.md").exists():
         return True
@@ -70,6 +53,20 @@ def has_graph_node(config: Config, state: State, path: Path) -> bool:
 def prune(
     config: Config, state: State, *, prompt=input, now: float | None = None
 ) -> int:
+    """Delete archive/ husks older than the TTL once the user confirms.
+
+    archive/ holds every processed clip original. Source nodes inline the full
+    body, so a captured husk is pure disk cost. Husks with no graph node are
+    listed as held back and never deleted. state.json is untouched, so nothing
+    is processed again.
+
+    Parameters
+    ----------
+    prompt
+        Reads the confirmation; tests pass a stub in place of ``input``.
+    now
+        Epoch seconds to age files against; defaults to the current time.
+    """
     now = time.time() if now is None else now
     archive = config.archive_dir
     ttl = config.archive_ttl_days
@@ -115,4 +112,5 @@ def prune(
 
 
 def main(config: Config) -> int:
+    """Run `bb prune` against the configured archive and state."""
     return prune(config, State.load(config.state_path))

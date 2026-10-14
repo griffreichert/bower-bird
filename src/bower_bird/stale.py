@@ -1,17 +1,3 @@
-"""`bb stale` — ranked, resumable queue for whole-graph synthesis (weave).
-
-Read-only, no LLM calls, no network, writes nothing. Turns "whole-graph
-synthesis" from unbounded work into a ranked list: which concept to weave
-next, and why.
-
-Parses the `<!-- bower:concept synthesized=YYYY-MM-DD sources=N -->` marker on
-each `brain/bowers/**/*.md` note. A block with no attributes, or no block at
-all, means the concept was never synthesized. Current feeding-source count is
-the number of distinct `brain/sources/*.md` notes that wikilink to the
-concept (measured more reliable than the note's own `## Sources` heading,
-which can drift — e.g. list tool/people links alongside sources).
-"""
-
 import math
 import re
 from datetime import date
@@ -28,8 +14,11 @@ _SOURCES_RE = re.compile(r"sources=(\d+)")
 
 
 def parse_marker(text: str) -> tuple[date | None, int | None]:
-    """The concept marker's `synthesized=`/`sources=` attributes, or (None,
-    None) if the block is absent or bare — both mean never synthesized."""
+    """Return the concept marker's ``synthesized=`` and ``sources=`` values.
+
+    Both are None when the block is absent or bare, which means the concept
+    was never synthesized.
+    """
     m = _MARKER_RE.search(text)
     if not m:
         return None, None
@@ -42,6 +31,8 @@ def parse_marker(text: str) -> tuple[date | None, int | None]:
 
 
 class StaleConcept(BaseModel):
+    """One concept with feeding sources that its synthesis has not absorbed."""
+
     title: str
     current_sources: int
     synthesized: date | None
@@ -49,17 +40,19 @@ class StaleConcept(BaseModel):
 
     @property
     def new_sources(self) -> int:
+        """Feeding sources added since the last synthesis."""
         return self.current_sources - (self.sources_at_synthesis or 0)
 
     @property
     def days_since(self) -> int | None:
+        """Days since the last synthesis, or None if never synthesized."""
         if self.synthesized is None:
             return None
         return (date.today() - self.synthesized).days
 
     @property
     def sort_key(self) -> tuple[int, float]:
-        # Never-synthesized notes sort as maximally stale on the tiebreaker.
+        """Rank by new sources, then age; never synthesized sorts as oldest."""
         return (
             self.new_sources,
             self.days_since if self.days_since is not None else math.inf,
@@ -67,14 +60,18 @@ class StaleConcept(BaseModel):
 
 
 def concept_notes(config: Config) -> list[Path]:
+    """Return every concept note under brain/bowers/, recursively."""
     if not config.notes_dir.is_dir():
         return []
     return sorted(config.notes_dir.rglob("*.md"))
 
 
 def stale_concepts(config: Config) -> list[StaleConcept]:
-    """Concepts with unsynthesized work, ranked by (new_sources, days_since)
-    descending. Concepts with 0 new sources are omitted — quiet by default."""
+    """Return concepts with unsynthesized sources, most stale first.
+
+    Concepts with no new sources are left out, so a caught up graph prints
+    nothing.
+    """
     counts = inbound_source_counts(config)
     concepts = []
     for path in concept_notes(config):
@@ -94,6 +91,7 @@ def stale_concepts(config: Config) -> list[StaleConcept]:
 
 
 def format_line(concept: StaleConcept) -> str:
+    """Render one queue row: title, new source count and staleness."""
     status = (
         "never synthesized"
         if concept.synthesized is None
@@ -104,6 +102,12 @@ def format_line(concept: StaleConcept) -> str:
 
 
 def main(config: Config, limit: int = 20) -> int:
+    """Run `bb stale`: print which concepts weave should synthesize next.
+
+    Reads files only. The count of feeding sources comes from the source
+    notes that wikilink to each concept, and the last synthesis from the
+    `<!-- bower:concept synthesized=YYYY-MM-DD sources=N -->` marker.
+    """
     concepts = stale_concepts(config)[:limit]
     if not concepts:
         print("stale: nothing to weave — every concept is caught up.")

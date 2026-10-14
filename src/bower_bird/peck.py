@@ -11,10 +11,6 @@ from bower_bird.review import (
     scan_sources,
 )
 
-# ---------------------------------------------------------------------------
-# peck — interactive quiz loop
-# ---------------------------------------------------------------------------
-
 _GRADE_ALIASES: dict[str, str] = {
     "s": "strong",
     "strong": "strong",
@@ -60,7 +56,7 @@ def question_for_node(config: Config, node: SourceNode, box: int) -> str | None:
     linked = node.linked_titles if box >= 4 else []
     try:
         result = generate_question(node.key_ideas, node.seed, linked, box, config.llm)
-    except Exception as exc:  # noqa: BLE001 — never abort the session
+    except Exception as exc:
         print(f"  (question generator unavailable: {exc} — self-quiz below)\n")
         return None
     return result.question
@@ -87,7 +83,7 @@ def judge_review(
         verdict = judge_answer(
             question, node.key_ideas, node.seed, answer, config.llm, linked
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"  (judge unavailable: {exc} — grade manually)\n")
         return None
     print(f"  Judge: {verdict.grade.upper()} — {verdict.rationale}\n")
@@ -116,9 +112,8 @@ def read_action(default: Grade | None) -> str | None:
         print("  Please enter s, w, x, b, or d.")
 
 
-# Kept for the test suite's existing entry point (accepts only s/w/x, no
-# default when a grade default isn't given).
 def read_grade(default: Grade | None) -> Grade | None:
+    """Read a grade only, returning None for the bad and retire actions."""
     action = read_action(default)
     if action in ("strong", "weak", "wrong"):
         return action  # type: ignore[return-value]
@@ -234,11 +229,6 @@ def peck(config: Config) -> int:
     print(f"peck: reviewed {reviewed} node(s).")
     print(ShelfCensus.from_store(store).render())
     return reviewed
-
-
-# ---------------------------------------------------------------------------
-# CLI halves — used by the /peck skill (judge on the subscription model)
-# ---------------------------------------------------------------------------
 
 
 def list_due(config: Config) -> int:

@@ -19,6 +19,7 @@ _CONCEPT_BLOCK_RE = re.compile(
 
 
 def read_text(path: Path) -> str:
+    """Return the file's text, or an empty string when it cannot be read."""
     try:
         return path.read_text(encoding="utf-8")
     except OSError:
@@ -33,15 +34,18 @@ def brain_files(config: Config) -> list[Path]:
 
 
 def node_id(text: str) -> str | None:
+    """Return the frontmatter ``id:``, or None when the note has none."""
     m = _ID_RE.search(text)
     return m.group(1).strip() if m else None
 
 
 def outbound_links(text: str) -> list[str]:
+    """Return every ``[[wikilink]]`` target in order, aliases stripped."""
     return [m.group(1).strip() for m in _WIKILINK_RE.finditer(text)]
 
 
 def frontmatter_title(text: str) -> str | None:
+    """Return the frontmatter ``title:``, or None when absent."""
     m = _TITLE_RE.search(text)
     return m.group(1).strip() if m else None
 
@@ -55,6 +59,7 @@ def frontmatter_topics(text: str) -> set[str] | None:
 
 
 def frontmatter_category(text: str) -> str | None:
+    """Return the frontmatter ``category:``, or None when absent."""
     m = _CATEGORY_RE.search(text)
     return m.group(1).strip() if m else None
 
@@ -76,9 +81,11 @@ def index_categories(index_text: str) -> dict[str, str]:
 
 
 def inbound_source_counts(config: Config) -> dict[str, int]:
-    """Concept stem -> count of distinct `brain/sources/*.md` notes that
-    wikilink to it. More reliable than a concept note's own `## Sources`
-    heading, which can drift (list tools/people alongside real sources)."""
+    """Count the distinct source notes that wikilink to each concept stem.
+
+    Counting from the sources side is more reliable than a concept note's own
+    `## Sources` heading, which drifts to list tools and people too.
+    """
     counts: dict[str, int] = {}
     if not config.sources_dir.is_dir():
         return counts
@@ -89,13 +96,17 @@ def inbound_source_counts(config: Config) -> dict[str, int]:
 
 
 def concept_block_links(text: str) -> set[str]:
-    """Distinct `[[wikilinks]]` cited *inside* a `<!-- bower:concept -->`
-    block. Empty set if there's no block, or the block cites nothing."""
+    """Return the distinct wikilinks cited inside the concept block.
+
+    Empty when the note has no `<!-- bower:concept -->` block or the block
+    cites nothing.
+    """
     m = _CONCEPT_BLOCK_RE.search(text)
     return set(outbound_links(m.group(1))) if m else set()
 
 
 def has_concept_block(text: str) -> bool:
+    """Return True when the note carries a synthesized concept block."""
     return "<!-- bower:concept" in text
 
 
@@ -112,6 +123,7 @@ class LintFindings(BaseModel):
 
     @property
     def empty(self) -> bool:
+        """True when every finding list is empty."""
         return not (
             self.orphan_reviews
             or self.orphan_nodes
@@ -124,9 +136,12 @@ class LintFindings(BaseModel):
 
 
 def run_lint(config: Config) -> tuple[LintFindings, int, int]:
-    """Run all three checks. Returns (findings, node_count, review_count).
+    """Run every structural check over brain/ and the review store.
 
-    Pure I/O — no network.
+    Checks orphan review entries, orphan nodes, broken links, topic and
+    category drift, under-cited synthesis blocks, and concepts with 3 or more
+    feeding sources but no synthesis. Reads files only: no LLM, no network,
+    no writes. Returns ``(findings, node_count, review_count)``.
     """
     files = brain_files(config)
     node_ids: set[str] = set()
@@ -172,10 +187,7 @@ def run_lint(config: Config) -> tuple[LintFindings, int, int]:
                 )
     broken_links = sorted(broken)
 
-    # Topic/category drift: the metadata-search-surface projection (spec #29)
-    # must agree with its source of truth — `## Links` for topics, `_index.md`
-    # for category. Only checked when the frontmatter key is present; a
-    # not-yet-backfilled node has neither and is not a finding.
+    # Frontmatter topics must match `## Links`; category must match _index.md.
     index_cats = index_categories(read_text(config.index_path))
     topic_drift: list[str] = []
     category_drift: list[str] = []
@@ -202,9 +214,7 @@ def run_lint(config: Config) -> tuple[LintFindings, int, int]:
                     f"_index.md category '{index_category}'"
                 )
 
-    # Synthesis checks (INVARIANTS.md:24-28): concept substance is earned
-    # synthesis, cited to the sources that earned it. Quiet on a concept with
-    # fewer than 2 feeding sources — it hasn't earned anything yet.
+    # Concepts fed by fewer than 2 sources have earned no synthesis yet.
     source_counts = inbound_source_counts(config)
     under_cited: list[str] = []
     earned_unsynth: list[str] = []
@@ -239,6 +249,7 @@ def run_lint(config: Config) -> tuple[LintFindings, int, int]:
 
 
 def print_findings(findings: LintFindings, node_count: int, review_count: int) -> int:
+    """Print each finding group and return the exit code: 1 if any, else 0."""
     if findings.empty:
         print(f"lint: clean ({node_count} nodes, {review_count} review entries)")
         return 0
@@ -282,5 +293,6 @@ def print_findings(findings: LintFindings, node_count: int, review_count: int) -
 
 
 def main(config: Config) -> int:
+    """Run `bb lint`: read only, and exit 1 when anything is found."""
     findings, node_count, review_count = run_lint(config)
     return print_findings(findings, node_count, review_count)

@@ -41,6 +41,7 @@ from bower_bird.state import State  # noqa: E402
 
 
 def read_sends(path: Path) -> list[str]:
+    """Read one send per line, skipping blanks and ``#`` comments."""
     sends = []
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.split(" #", 1)[0].strip()
@@ -50,6 +51,7 @@ def read_sends(path: Path) -> list[str]:
 
 
 def main() -> int:
+    """Run each send in the file through the capture pipeline."""
     if len(sys.argv) < 2:
         print(__doc__)
         return 2

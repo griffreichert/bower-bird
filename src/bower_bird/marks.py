@@ -47,14 +47,17 @@ class Marks(BaseModel):
 
     @property
     def empty(self) -> bool:
+        """True when the clip carries no highlight, dig, question or link."""
         return not (self.highlights or self.dig or self.questions or self.further_links)
 
 
 def unwrap_highlights(text: str) -> str:
+    """Return ``text`` with ``==highlight==`` markers removed, content kept."""
     return _HIGHLIGHT.sub(r"\1", text)
 
 
 def extract_highlights(body: str) -> list[str]:
+    """Return the text of every non-empty ``==highlight==`` in the body."""
     return [h.strip() for h in _HIGHLIGHT.findall(body) if h.strip()]
 
 
@@ -82,9 +85,10 @@ def clean_line(text: str) -> str:
 
 
 def extract_person(body: str) -> list[str]:
-    """Mention text for each ``#person`` tag — the anchor Haiku resolves a name
-    from. Inline (tag on the mention's line) uses that line; a tag alone on its
-    own line reaches back to the nearest preceding non-empty line.
+    """Return the mention text for each ``#person`` tag.
+
+    Haiku resolves a name from this anchor. An inline tag uses its own line; a
+    tag alone on a line uses the nearest non-empty line above it.
     """
     lines = body.splitlines()
     out: list[str] = []
@@ -146,10 +150,11 @@ def extract_links(body: str, self_url: str) -> list[tuple[str, str]]:
 
 
 def extract_urls(body: str) -> list[str]:
-    """Every link in a clip body — bare or markdown, de-duped, order-preserving,
-    images dropped. Grounds entity (tool/person) extraction and supplies the
-    source URL when the clip frontmatter has none (e.g. a Telegram note pasted
-    with bare links)."""
+    """Return every link in a clip body, deduped in order, images dropped.
+
+    The links ground tool and person extraction and supply the source URL
+    when the clip frontmatter has none.
+    """
     seen: set[str] = set()
     out: list[str] = []
     for match in _BARE_URL.finditer(body):

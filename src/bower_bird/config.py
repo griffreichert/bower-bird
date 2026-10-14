@@ -1,20 +1,3 @@
-"""Configuration: environment + vault paths + model.
-
-Loaded once at startup via `Config()`. ANTHROPIC_API_KEY is loaded from .env
-and exported to the process environment for the Anthropic SDK — launchd jobs
-don't inherit shell exports (see model_post_init).
-
-The vault is *not* part of this repo. It lives in iCloud. bower-bird owns one
-folder there, `BowerBird/`, and writes nowhere else (per INVARIANTS). That
-owned folder is `vault_path`. We locate it from the gitignored `notes/` symlink
-(notes/ -> G/g/projects/bower-bird): the Obsidian root (.../G) is three parents
-up from that target, and the owned folder is `<root>/BowerBird`. Override with
-BOWER_VAULT_PATH.
-
-Writable paths at runtime: inbox/ (clipper drop target), brain/ (sources/,
-bowers/, people/, tools/), archive/, to-clip.md, tools.md, _inbox.md, digests/.
-"""
-
 import os
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -135,25 +118,28 @@ class Config(BaseSettings):
     llm: ClassVar[LLMSettings] = LLMSettings()
 
     telegram_bot_token: SecretStr = Field(alias="TELEGRAM_BOT_TOKEN")
-    # The Anthropic SDK reads ANTHROPIC_API_KEY from the process environment —
-    # which a launchd job does NOT inherit from the shell. Load it from .env
-    # here and export it in model_post_init so cron runs authenticate too.
     anthropic_api_key: SecretStr = Field(
-        default=SecretStr(""), alias="ANTHROPIC_API_KEY"
+        default=SecretStr(""),
+        alias="ANTHROPIC_API_KEY",
+        description="Loaded from .env and exported in model_post_init, since a "
+        "launchd job does not inherit the shell environment the SDK reads.",
     )
-    # Telegram chat_ids allowed to drive the bot, parsed from a comma/space-
-    # separated env string. A Telegram bot is publicly addressable by @handle,
-    # so an empty allowlist means ANY sender can trigger fetches/LLM calls/
-    # vault writes — set this to your own chat_id(s) to lock the bot to you.
     allowed_chat_ids: set[int] = Field(
-        default_factory=set, alias="BOWER_ALLOWED_CHAT_IDS"
+        default_factory=set,
+        alias="BOWER_ALLOWED_CHAT_IDS",
+        description="Telegram chat ids allowed to drive the bot, comma or space "
+        "separated. Empty lets ANY sender trigger fetches, LLM calls and vault "
+        "writes, since a bot is publicly addressable by handle.",
     )
     vault_path: Path = Field(
         default=None, alias="BOWER_VAULT_PATH", validate_default=True
     )
-    # AnkiConnect's local HTTP endpoint (add-on 2055492159). Only reachable
-    # while the Anki desktop app is open.
-    anki_url: str = Field(default="http://127.0.0.1:8765", alias="BOWER_ANKI_URL")
+    anki_url: str = Field(
+        default="http://127.0.0.1:8765",
+        alias="BOWER_ANKI_URL",
+        description="AnkiConnect endpoint (add-on 2055492159); only reachable "
+        "while the Anki desktop app is open.",
+    )
     state_path: Path = Field(
         default=REPO_ROOT / "data" / "state.json", alias="BOWER_STATE_PATH"
     )
@@ -169,10 +155,13 @@ class Config(BaseSettings):
         alias="BOWER_QUEUE_LIMIT",
         description="Max Telegram updates pulled per run.",
     )
-    # `bb prune` only offers archived husks older than this. The window exists to
-    # eyeball thin extractions before the cold original is gone (build can starve
-    # on thin bodies) — don't drop it to 0.
-    archive_ttl_days: int = Field(default=30, ge=0, alias="BOWER_ARCHIVE_TTL_DAYS")
+    archive_ttl_days: int = Field(
+        default=30,
+        ge=0,
+        alias="BOWER_ARCHIVE_TTL_DAYS",
+        description="`bb prune` only offers husks older than this. The window "
+        "leaves time to spot a thin extraction while the original still exists.",
+    )
 
     @field_validator("allowed_chat_ids", mode="before")
     @classmethod
@@ -192,10 +181,7 @@ class Config(BaseSettings):
     def _resolve_vault(cls, v: Path | str | None) -> Path:
         vault = Path(v).expanduser() if v else None
         if vault is None:
-            # Resolve bower-bird's owned folder from the `notes/` symlink:
-            # notes/ -> .../G/g/projects/bower-bird, so the Obsidian root
-            # (.../G) is parents[2] of the resolved target, and the owned
-            # folder is `<root>/BowerBird`.
+            # notes/ -> <vault>/g/projects/bower-bird, so the vault is parents[2].
             link = REPO_ROOT / "notes"
             try:
                 target = link.resolve(strict=True)
@@ -215,8 +201,7 @@ class Config(BaseSettings):
     # --- Derived locations inside the owned folder (everything we touch) ---
     @property
     def inbox_dir(self) -> Path:
-        """Web Clipper transient drop target — the pull consumes it within one
-        tick (antilibrary model: everything sent is shelved, never queued)."""
+        """Web Clipper drop target; the pull consumes it within one tick."""
         return self.vault_path / "inbox"
 
     @property
@@ -226,14 +211,16 @@ class Config(BaseSettings):
 
     @property
     def to_clip_path(self) -> Path:
-        """Clip queue: links httpx can't read (X/Twitter, JS-walled). Open each
-        in a browser, Web Clipper into inbox/, then it gets read + processed."""
+        """Queue of links httpx cannot read, for a human to Web Clip.
+
+        Each one is opened in a browser and clipped into inbox/, where the clip
+        lane shelves it.
+        """
         return self.vault_path / "to-clip.md"
 
     @property
     def tools_path(self) -> Path:
-        """Keep-for-later shelf: plugins/repos/tools collected via `tool:`. Not
-        knowledge — never enters brain/."""
+        """Shelf of tools collected via `tool:`; never enters brain/."""
         return self.vault_path / "tools.md"
 
     @property
@@ -248,50 +235,59 @@ class Config(BaseSettings):
 
     @property
     def notes_dir(self) -> Path:
-        """Concept-note root: brain/bowers/. Notes live in topical subfolders
-        (bowers), so callers recurse. New concepts land flat here until Tier-2
-        files them. Additive-only on human-authored notes (per INVARIANTS)."""
+        """Concept note root, brain/bowers/.
+
+        Notes live in topical subfolders, so callers recurse. New concepts land
+        flat here until weave files them. Human text here is append only.
+        """
         return self.brain_dir / "bowers"
 
     @property
     def people_dir(self) -> Path:
-        """People notes: brain/people/<name>.md. Unquizzed leaf nodes (authors,
-        creators, figures) — linked to concepts, never minted as bowers."""
+        """People leaf notes, linked to concepts and never quizzed."""
         return self.brain_dir / "people"
 
     @property
     def tools_dir(self) -> Path:
-        """Tool notes: brain/tools/<name>.md. Unquizzed leaf nodes (repos, libs,
-        plugins referenced in a read clip) — linked to concepts, never quizzed.
-        Distinct from the flat `tools.md` shelf (the bare `tool:` recall lane)."""
+        """Tool leaf notes named inside sources, never quizzed.
+
+        Distinct from the flat `tools.md` shelf that the `tool:` lane fills.
+        """
         return self.brain_dir / "tools"
 
     @property
     def index_path(self) -> Path:
-        """The graph catalog — one line per brain/ page (`[[title]] · category ·
-        one-liner`). `build` upserts it incrementally (O(1) per capture) and
-        reads it as the sole link-candidate lookup, so build cost stays bounded
-        regardless of graph size. `weave` does periodic full repair."""
+        """Graph catalog, one ``[[title]] · category · one liner`` line per page.
+
+        Capture upserts one line at a time and reads it as the only link
+        candidate lookup, so capture cost stays bounded as the graph grows.
+        `bb tidy` rebuilds it in full.
+        """
         return self.brain_dir / "_index.md"
 
     @property
     def log_path(self) -> Path:
-        """Append-only activity log — one line per build (Karpathy's log.md).
-        `weave` reads it to run incrementally (touch only what changed since the
-        last pass) instead of rescanning the whole graph."""
+        """Append only activity log, one line per capture.
+
+        Weave reads it to work only on what changed since its last pass.
+        """
         return self.brain_dir / "_log.md"
 
     @property
     def archive_dir(self) -> Path:
-        """Recycle bin: processed clip originals, moved here (never
-        hard-deleted; `bb prune` GCs it after the TTL). Since #25 the source
-        node inlines the body — archive/ carries no unique knowledge."""
+        """Recycle bin of processed clip originals, cleared by `bb prune`.
+
+        Source nodes inline the full body, so archive/ holds no unique
+        knowledge.
+        """
         return self.vault_path / "archive"
 
     @property
     def recall_map_path(self) -> Path:
-        """Anki review state rolled up by concept, rebuilt whole by `bb anki
-        harvest`. Bot-owned and derived, like `_index.md` — never human prose."""
+        """Anki recall rolled up by concept, rebuilt whole by `bb anki harvest`.
+
+        Derived and bot owned like `_index.md`; it never holds human prose.
+        """
         return self.vault_path / "digests" / "recall-map.md"
 
     @property
@@ -305,9 +301,11 @@ class Config(BaseSettings):
         return self.vault_path / "_review.json"
 
     def model_post_init(self, __context: object) -> None:
-        """Export ANTHROPIC_API_KEY into the process environment when it isn't
-        already there — launchd jobs don't inherit the shell's exports, and
-        the Anthropic SDK only looks in the environment."""
+        """Export ANTHROPIC_API_KEY into the environment when it is unset.
+
+        launchd jobs do not inherit the shell's exports, and the Anthropic SDK
+        only reads the environment.
+        """
         key = self.anthropic_api_key.get_secret_value()
         if key:
             os.environ.setdefault("ANTHROPIC_API_KEY", key)

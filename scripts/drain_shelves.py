@@ -1,6 +1,7 @@
-"""One-shot stock drain: shelve the legacy pre-antilibrary shelf docs
-(`tweets/*.md`, `trinkets/*.md`) into `brain/sources/` via the NEW ingest
-pipeline. This is the "full stock drain" pilot_ingest.py's docstring defers.
+"""One shot drain of the legacy shelf docs into `brain/sources/`.
+
+Shelves `tweets/*.md` and `trinkets/*.md` through the current ingest
+pipeline. This is the full stock drain that pilot_ingest.py defers.
 
 `inbox/` is NOT drained here — `bb build` already owns it; this script only
 clears its stale url-dedup entries (see step 2) so build can pick those clips
@@ -74,6 +75,7 @@ _SENDER = "drain"
 
 
 def shelf_docs(config: Config) -> list[Path]:
+    """Return the processable legacy docs under tweets/ and trinkets/."""
     tweets = sorted((config.vault_path / "tweets").glob("*.md"))
     trinkets = sorted((config.vault_path / "trinkets").glob("*.md"))
     return [p for p in tweets + trinkets if inbox.is_processable(p)]
@@ -93,15 +95,18 @@ def existing_node_urls(config: Config) -> set[str]:
 
 
 def doc_url(path: Path, fm: dict[str, str], body: str) -> str:
+    """Return the doc's source URL, falling back to the first body link."""
     return inbox.clip_to_meta(
         path, fm, body, fallback_url=pick_source_url(extract_urls(body))
     ).url
 
 
 def clear_stale_dedup(state: State, paths: list[Path], existing: set[str]) -> int:
-    """Drop `state.processed_urls` entries for docs whose url has no matching
-    brain/sources/ node yet — old-model sends marked processed but never
-    actually turned into a node. Urls that DO have a node stay deduped."""
+    """Clear processed URLs that never became a source node.
+
+    Older sends were marked processed without a node. URLs that have a node
+    stay deduped.
+    """
     cleared = 0
     for path in paths:
         try:
@@ -119,15 +124,11 @@ def clear_stale_dedup(state: State, paths: list[Path], existing: set[str]) -> in
 
 
 def run_without_clip_queue(fn, *args, **kw):
-    """Call `fn` with `queues.append_to_clip_queue` blocked (returns False,
-    writes nothing).
+    """Call ``fn`` with ``queues.append_to_clip_queue`` stubbed to write nothing.
 
-    ponytail: a scoped monkeypatch on the shared module attribute, restored
-    in `finally` — safe here because the script is single-threaded/one-shot.
-    The alternative — re-deriving success/failure ourselves before deciding
-    whether to call app.handle_update at all — means duplicating
-    shelve_link/shelve_tweet_url's resolution + media-only classification,
-    exactly the pipeline-duplication the spec says not to do.
+    The patch is restored in ``finally`` and is safe in this one shot,
+    single threaded script. The alternative would duplicate the shelve lanes'
+    resolution and media classification here.
     """
     original = queues.append_to_clip_queue
     queues.append_to_clip_queue = lambda *a, **k: False
@@ -138,8 +139,7 @@ def run_without_clip_queue(fn, *args, **kw):
 
 
 def move_to_retry(config: Config, path: Path, reason: str) -> None:
-    """Unrecoverable per-item failure: move the original doc to `_retry/`
-    (never dropped, never left stuck) and log why."""
+    """Move a doc that failed for good into ``_retry/`` and log the reason."""
     retry_dir = config.vault_path / "_retry"
     retry_dir.mkdir(parents=True, exist_ok=True)
     dest = retry_dir / path.name
@@ -158,8 +158,11 @@ def move_to_retry(config: Config, path: Path, reason: str) -> None:
 def drain_one(
     config: Config, state: State, path: Path, existing: set[str]
 ) -> tuple[str, str]:
-    """Drain one shelf doc. Returns (outcome, detail) — outcome is one of
-    'drained' / 'fallback' / 'already_had_node' / 'retry'."""
+    """Drain one shelf doc and return ``(outcome, detail)``.
+
+    The outcome is one of ``drained``, ``fallback``, ``already_had_node`` or
+    ``retry``.
+    """
     raw = path.read_text(encoding="utf-8")
     fm, body = inbox.parse_clip(raw)
     meta = inbox.clip_to_meta(
@@ -200,6 +203,7 @@ def drain_one(
 
 
 def main() -> int:
+    """Drain every legacy shelf doc, or a scratch copy with ``--scratch``."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scratch", type=Path, default=None, help="Run against DIR/BowerBird instead."

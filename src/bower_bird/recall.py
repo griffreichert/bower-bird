@@ -1,18 +1,3 @@
-"""`bb ask` — read-only ranked recall over the claim corpus.
-
-Retrieval is a ranking problem, not an infrastructure problem, at this graph
-size (plan: notes/2026-07-25-retrieval-plan.md, D2): plain Python token
-overlap over claims + titles + topics, no LLM, no embeddings, no network.
-
-Two claim sources:
-  - `brain/sources/*.md` — `## Key ideas` bullets (raw, single-source).
-  - `brain/bowers/**/*.md` — bullets inside a `<!-- bower:concept -->` block
-    (synthesized, multi-source) — these outrank source claims (D1/D2).
-
-Reuses lint.py's frontmatter regex helpers (read_text, frontmatter_topics)
-rather than re-parsing frontmatter here.
-"""
-
 import json
 import re
 
@@ -34,6 +19,7 @@ _STOPWORDS = {
 
 
 def frontmatter_source_url(text: str) -> str:
+    """Return the frontmatter ``source:`` URL, or an empty string."""
     m = _SOURCE_URL_RE.search(text)
     return m.group(1).strip() if m else ""
 
@@ -100,7 +86,12 @@ def score(claim: Claim, query_tokens: set[str]) -> float:
 
 
 def ask(config: Config, query: str, limit: int = 20) -> list[Claim]:
-    """Rank every claim against `query`; drop zero-score, return the top `limit`."""
+    """Rank every claim against ``query`` and return the top ``limit``.
+
+    Plain token overlap over claims, titles and topics: no LLM, no
+    embeddings, no network. Concept claims from synthesis blocks outrank
+    source key ideas. Claims that share no token with the query are dropped.
+    """
     query_tokens = tokenize(query)
     scored = ((score(c, query_tokens), c) for c in load_claims(config))
     ranked = sorted(
@@ -110,6 +101,7 @@ def ask(config: Config, query: str, limit: int = 20) -> list[Claim]:
 
 
 def format_text(claims: list[Claim]) -> str:
+    """Render claims for the terminal, each followed by its node and URL."""
     lines = []
     for c in claims:
         lines.append(c.text)
@@ -119,4 +111,5 @@ def format_text(claims: list[Claim]) -> str:
 
 
 def format_json(claims: list[Claim]) -> str:
+    """Render claims as a JSON list, for skills that call `bb ask --json`."""
     return json.dumps([c.model_dump() for c in claims], indent=2)

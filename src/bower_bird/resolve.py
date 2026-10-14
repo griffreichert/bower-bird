@@ -1,14 +1,3 @@
-"""Resolve X/Twitter links to tweet text via public proxy endpoints.
-
-X/Twitter pages are JS-walled (fetch.needs_clipping routes them straight to
-the clip queue — a plain httpx GET gets nothing). Rather than dead-end those
-links, we resolve the tweet text ourselves via two public proxies that don't
-require auth: fxtwitter.com first, Twitter's own syndication CDN (used to
-embed tweets on third-party pages) as fallback. Both verified working
-2026-07-09. If both fail, resolve_tweet returns None and the caller falls
-back to the clip queue as before.
-"""
-
 import math
 import re
 from urllib.parse import urlparse
@@ -47,6 +36,7 @@ def parse_tweet_id(url: str) -> str | None:
 
 
 def base36(n: int) -> str:
+    """Return ``n`` in base 36, lowercase digits."""
     if n == 0:
         return "0"
     out = ""
@@ -57,8 +47,10 @@ def base36(n: int) -> str:
 
 
 def syndication_token(tweet_id: str) -> str:
-    """Compute the token Twitter's syndication CDN requires: base36((id/1e15)*pi),
-    integer + ~12 fractional digits, with all '0' chars and the '.' stripped.
+    """Compute the token Twitter's syndication CDN requires.
+
+    The token is base36 of ``(id / 1e15) * pi``, integer part plus about 12
+    fractional digits, with every ``0`` and the ``.`` stripped.
     """
     value = (int(tweet_id) / 1e15) * math.pi
     whole = int(value)
@@ -74,6 +66,7 @@ def syndication_token(tweet_id: str) -> str:
 
 
 def canonical_url(handle: str, tweet_id: str) -> str:
+    """Return the canonical ``x.com`` status URL for a tweet."""
     return f"https://x.com/{handle}/status/{tweet_id}"
 
 
@@ -92,7 +85,8 @@ def article_markdown(content: dict) -> str:
     """Render a native X Article's Draft.js block list to markdown.
 
     Ignores entityRanges/inlineStyleRanges — plain text carries the substance.
-    Blank line between blocks, except consecutive list items stay adjacent."""
+    Blank line between blocks, except consecutive list items stay adjacent.
+    """
     lines: list[str] = []
     prev_type = None
     for block in content.get("blocks") or []:
@@ -112,12 +106,11 @@ def article_markdown(content: dict) -> str:
 
 
 def from_fxtwitter(data: dict) -> TweetText | None:
+    """Parse an fxtwitter payload, including any native X Article body."""
     if data.get("code") != 200:
         return None
     tweet = data.get("tweet")
-    # A native Article tweet can carry an empty `text` (the t.co pointer at
-    # the article lives in `raw_text` instead, ignored here) with the real
-    # content entirely in `article` — don't bail out before checking for one.
+    # An Article tweet can have empty `text` with its content in `article`.
     if not tweet or (not tweet.get("text") and not tweet.get("article")):
         return None
     author = tweet.get("author") or {}
@@ -149,6 +142,7 @@ def from_fxtwitter(data: dict) -> TweetText | None:
 
 
 def from_syndication(data: dict) -> TweetText | None:
+    """Parse a syndication CDN payload; it never carries an Article body."""
     if not data.get("text") or not data.get("id_str"):
         return None
     user = data.get("user") or {}
@@ -167,15 +161,15 @@ def from_syndication(data: dict) -> TweetText | None:
 
 
 def expand_urls(text: str, timeout: float) -> str:
-    """Replace every `https://t.co/<id>` shortlink in `text` with the URL it
-    redirects to.
+    """Replace every ``https://t.co/<id>`` shortlink with its redirect target.
 
-    Verified against the live proxies (2026-07-15): neither fxtwitter's
+    Neither fxtwitter's
     `text` nor its `raw_text.text` expand t.co, and syndication's `text` is
     also unexpanded (its `entities.urls[].expanded_url` does carry it, but
     only on that one path) — so this always does the HTTP hop rather than
     trusting either payload. A link that fails to resolve (network error,
-    blocked host, too many redirects) is left as-is. Never raises."""
+    blocked host, too many redirects) is left as-is. Never raises.
+    """
     for shortlink in set(_TCO_URL_RE.findall(text)):
         try:
             expanded = follow_redirect(shortlink, timeout)
@@ -187,8 +181,10 @@ def expand_urls(text: str, timeout: float) -> str:
 
 
 def expand_tweet_text(tweet: TweetText, timeout: float) -> TweetText:
-    """Expand t.co shortlinks on a resolved tweet's text + quoted_text, so
-    every consumer (shelve, dedup, further-reading harvest) sees real URLs."""
+    """Expand t.co shortlinks in a tweet's text and quoted text.
+
+    Every consumer, from shelving to dedup, then sees real URLs.
+    """
     return tweet.model_copy(
         update={
             "text": expand_urls(tweet.text, timeout),

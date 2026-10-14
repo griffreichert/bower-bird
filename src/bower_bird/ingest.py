@@ -1,16 +1,3 @@
-"""Vault-write boundary guard + bits shared by `nodes.py` and `queues.py`.
-
-Hard boundary (per INVARIANTS): bower-bird owns the `BowerBird/` folder
-(`config.vault_path`) and writes *nowhere else*. `assert_writable` enforces
-that in code so a future change can't quietly break it — every writer in
-`nodes.py` and `queues.py` calls it before touching a path.
-
-Additive-autonomous: bower-bird creates its own notes (sources/, new concept
-notes in brain/bowers/) and asserts `[[links]]` freely, but it **never rewrites
-or deletes an existing note**. Every write is either a brand-new file or a
-strictly additive append — so nothing a human authored is ever clobbered.
-"""
-
 import re
 from datetime import datetime
 from pathlib import Path
@@ -38,31 +25,27 @@ def yaml_scalar(value: str) -> str:
     Page metadata and model output are attacker-influenceable (a hostile page's
     og:title, or prompt-injected model fields). Collapsing whitespace kills
     newline-injection of spurious frontmatter keys; swapping `"`→`'` keeps the
-    closing quote intact. Apply to every value interpolated into frontmatter."""
+    closing quote intact. Apply to every value interpolated into frontmatter.
+    """
     return " ".join(value.split()).replace('"', "'")
 
 
 def safe_filename(title: str) -> str:
+    """Return ``title`` as a filename: invalid characters dashed, 120 chars max."""
     cleaned = _INVALID_FILENAME.sub("-", title).strip().strip(".")
     cleaned = re.sub(r"\s+", " ", cleaned)
     return (cleaned or "untitled")[:120]
 
 
 def today_iso() -> str:
+    """Return today's local date as ``YYYY-MM-DD``."""
     return datetime.now().date().isoformat()
 
 
-# --------------------------------------------------------------------------- #
-# tweet body rendering (reused by the shelve lane's source-node ## Body)
-# --------------------------------------------------------------------------- #
-
-
 def format_tweet_body(tweet: TweetText) -> str:
-    """Render a resolved tweet's text (+ reply hint / quote block) as markdown.
+    """Render a resolved tweet, its reply hint and quote block as markdown.
 
-    Every send is shelved immediately now (antilibrary model, 2026-07-13) — a
-    tweet gets one source node straight away, not a rendered doc in a separate
-    reading room. This is the body renderer for that node's `## Body`.
+    The result is the ``## Body`` of the tweet's source node.
     """
     lines = []
     if tweet.in_reply_to:

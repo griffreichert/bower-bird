@@ -8,10 +8,7 @@ from pydantic import BaseModel, Field
 
 from bower_bird.resolve import parse_tweet_id
 
-# resolve.py only imports from fetch.py, so state -> resolve is cycle-free.
-# parse_tweet_id validates host + status path but doesn't expose the handle,
-# so the handle capture is redone here rather than reaching into resolve's
-# private regex.
+# parse_tweet_id validates the URL but does not expose the handle.
 _TWEET_HANDLE_RE = re.compile(r"^/([^/]+)/status/\d+")
 
 _TRACKING_PARAMS = {"s", "t", "si", "fbclid", "gclid", "ref"}
@@ -23,15 +20,16 @@ def content_hash(text: str) -> str:
 
 
 def is_tracking_param(key: str) -> bool:
+    """Return True for ``utm_*`` and known share tracking query keys."""
     key = key.lower()
     return key.startswith("utm_") or key in _TRACKING_PARAMS
 
 
 def canonicalize_url(url: str) -> str:
-    """One canonical form per real resource, so dedup and clearing don't
-    care which share-link variant was sent.
+    """Return one canonical URL per real resource.
 
-    Tweet URLs collapse to the tweet-id form (id is the identity; two
+    Dedup and clearing then ignore which share link variant was sent. Tweet
+    URLs collapse to the tweet-id form (id is the identity; two
     different-handle forms of the same status don't occur in practice, the
     handle lives in the path). Everything else: lowercase scheme+host, strip
     `www.`, strip the fragment, drop known tracking params while keeping the
@@ -73,19 +71,22 @@ class State(BaseModel):
 
     @classmethod
     def load(cls, path: Path) -> "State":
+        """Load state from ``path``, or start empty when the file is missing.
+
+        URLs are canonicalized on load so older history keeps deduping.
+        """
         if not path.exists():
             return cls(path=path)
         raw = json.loads(path.read_text(encoding="utf-8"))
         return cls(
             path=path,
             telegram_offset=int(raw.get("telegram_offset", 0)),
-            # canonicalize on load so history from before this change keeps
-            # deduping; canonicalizing an already-canonical URL is a no-op
             processed_urls={canonicalize_url(u) for u in raw.get("processed_urls", [])},
             processed_hashes=set(raw.get("processed_hashes", [])),
         )
 
     def save(self) -> None:
+        """Write state atomically through a temp file and rename."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "telegram_offset": self.telegram_offset,
@@ -97,13 +98,17 @@ class State(BaseModel):
         tmp.replace(self.path)
 
     def seen_url(self, url: str) -> bool:
+        """Return True when the canonical form of ``url`` was processed."""
         return canonicalize_url(url) in self.processed_urls
 
     def mark_url(self, url: str) -> None:
+        """Record the canonical form of ``url`` as processed."""
         self.processed_urls.add(canonicalize_url(url))
 
     def seen_hash(self, digest: str) -> bool:
+        """Return True when a clip with this content hash was processed."""
         return digest in self.processed_hashes
 
     def mark_hash(self, digest: str) -> None:
+        """Record a clip content hash as processed."""
         self.processed_hashes.add(digest)

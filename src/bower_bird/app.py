@@ -1,12 +1,3 @@
-"""Run orchestration: one pass over both capture lanes.
-
-Capture is instant; processing waits until the laptop is awake. Each
-invocation (a) pulls the Telegram queue, and (b) processes any Web Clipper
-drops in the inbox, routing every item and writing into the owned `BowerBird/`
-folder. Run it from a launchd job (e.g. daily) or by hand. Designed to finish
-within the current session — no long-poll loop.
-"""
-
 import re
 import sys
 import time
@@ -43,8 +34,11 @@ def finish_shelve(
     model: str,
     full_body: str,
 ) -> str:
-    """Synthesize + write a source node, then catalog/log/receipt. Shared tail
-    for every shelve-lane path (plain fetch, PDF, tweet, pasted prose)."""
+    """Synthesize and write a source node, then catalog, log and return a receipt.
+
+    The shared tail of every shelve path: plain fetch, PDF, tweet and pasted
+    prose.
+    """
     query = f"{meta.title} {note} {meta.body_excerpt}"
     candidates = catalog.candidate_index(config, config.llm, query)
     plan = synthesize_clipping(meta, note, candidates, model, config.llm)
@@ -71,7 +65,8 @@ def shelve_link(config: Config, state: State, url: str, note: str) -> str:
 
     Shared tail for any link the SHELVE lane resolves to an external page —
     the plain-link path in handle_update, and the tweet lane's link-wrapper
-    case once the t.co shortlink is expanded to the real article."""
+    case once the t.co shortlink is expanded to the real article.
+    """
     if is_pdf_url(url):
         meta = fetch_pdf(url, timeout=config.fetch_timeout)
         if not meta.body_excerpt:
@@ -115,11 +110,11 @@ _URL_RE = re.compile(r"https?://\S+")
 
 
 def tweet_prose_and_external_urls(text: str) -> tuple[str, list[str]]:
-    """Split (expanded) tweet text into bare prose (URLs stripped, whitespace
-    collapsed) and the external URLs it contains — anything not hosted on
-    x.com/twitter's own domains (media, quote links, a t.co we couldn't
-    expand). Used to tell a link-wrapper or media-only tweet apart from one
-    with real prose worth its own node."""
+    """Split expanded tweet text into bare prose and its external URLs.
+
+    External means hosted outside X's own domains. The split tells a link
+    wrapper or media only tweet apart from one with prose worth its own node.
+    """
     urls = _URL_RE.findall(text)
     prose = " ".join(_URL_RE.sub("", text).split())
     external = [
@@ -181,10 +176,7 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
             state.mark_url(tweet.url)
 
     if tweet.article_body:
-        # Native X long-form Article — the tweet text is just a t.co pointer
-        # at x.com/i/article/... (JS-walled), but fxtwitter's payload carries
-        # the full article. That's the substance; shelve it directly and skip
-        # the wrapper/media-only classification below entirely.
+        # A native X Article: fxtwitter carries the full body, so shelve it.
         meta = PageMeta(
             url=tweet.url,
             title=tweet.article_title
@@ -231,8 +223,7 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
 
 
 def shelve_prose(config: Config, state: State, text: str, sender: str) -> str:
-    """Pasted prose, no link: its own source node, sender as author, the text
-    itself as the immutable body."""
+    """Shelve pasted prose as its own source node, with the sender as author."""
     stripped = text.strip()
     meta = PageMeta(
         url="",
@@ -247,6 +238,7 @@ def shelve_prose(config: Config, state: State, text: str, sender: str) -> str:
 
 
 def handle_update(config: Config, state: State, text: str, sender: str = "") -> str:
+    """Route one Telegram message to its lane and return the receipt text."""
     parsed = parse(text)
 
     if parsed.lane is Lane.NO_LINK:
@@ -275,8 +267,7 @@ def handle_update(config: Config, state: State, text: str, sender: str = "") -> 
             return f"🔁 Already in tools — {truncate_title(meta.title)}"
         return f"🔧 tools — {truncate_title(meta.title)}"
 
-    # Lane.SHELVE — every link becomes a source node immediately (antilibrary
-    # model, 2026-07-13): no read-status fork, just "can we get the body".
+    # Lane.SHELVE: every link becomes a source node now.
     if needs_clipping(url):
         return shelve_tweet_url(config, state, url, parsed.note)
 
@@ -348,6 +339,14 @@ def run_drain(config: Config | None = None) -> int:
 
 
 def pull_telegram(config: Config, state: State) -> int:
+    """Handle queued Telegram updates in order and return how many were acked.
+
+    Every handled update is acked, so a poison message cannot loop. An
+    unauthorized sender is dropped silently but still acked. An OSError stops
+    the pull without acking, since iCloud raises EDEADLK on a file it has not
+    downloaded yet and the next tick retries. A permanent OSError stalls the
+    queue until fixed by hand; the cron log shows it.
+    """
     token = config.telegram_bot_token.get_secret_value()
     updates = telegram.get_updates(
         token,
@@ -367,8 +366,6 @@ def pull_telegram(config: Config, state: State) -> int:
     processed = 0
     for update in sorted(updates, key=lambda u: u.update_id):
         if allowed and update.chat_id not in allowed:
-            # Unauthorized sender: drop silently (don't confirm the bot exists),
-            # but still advance the offset so the message can't replay forever.
             state.telegram_offset = update.update_id + 1
             state.save()
             continue
@@ -376,28 +373,21 @@ def pull_telegram(config: Config, state: State) -> int:
         try:
             receipt = handle_update(config, state, update.text, update.author)
         except OSError as exc:
-            # Transient filesystem error — iCloud raises EDEADLK (errno 11 on
-            # macOS) reading a dataless file it hasn't materialized yet. Don't
-            # ack: stop here so this and later updates retry next tick.
-            # ponytail: a *permanent* OSError stalls the queue; the cron log
-            # shows it, unblock by hand.
             print(
                 f"retrying update {update.update_id} next tick: {exc}",
                 file=sys.stderr,
             )
             return processed
-        except Exception as exc:  # noqa: BLE001 — report, don't crash the run
-            # Generic receipt: never reflect internal detail (paths, tokens) to
-            # the sender. Full exception goes to the local cron log only.
+        except Exception as exc:
+            # The sender gets a generic receipt; details stay in the local log.
             print(f"error handling update {update.update_id}: {exc}", file=sys.stderr)
             receipt = "⚠️ Couldn't process that one."
 
         try:
             telegram.send_message(token, update.chat_id, receipt)
-        except Exception:  # noqa: BLE001 — a failed receipt must not stall the queue
+        except Exception:
             pass
 
-        # Acknowledge the update regardless, so a poison message can't loop.
         state.telegram_offset = update.update_id + 1
         state.save()
         processed += 1

@@ -45,9 +45,10 @@ Run: uv run python scripts/propose_merges.py [--out PATH] [--vault-path PATH]
 import argparse
 import re
 import sys
-from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
+
+from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -80,32 +81,38 @@ _TIERS = ("exact", "high", "review")
 
 
 def norm_words(title: str) -> frozenset[str]:
-    """Casefold + tokenize + naive singularize, stopwords dropped — the token
-    set the Jaccard similarity runs over."""
+    """Return the casefolded, singularized word set Jaccard similarity uses.
+
+    Stopwords are dropped.
+    """
     words = re.findall(r"[a-z0-9]+", title.lower())
     singular = {w[:-1] if w.endswith("s") and len(w) > 3 else w for w in words}
     return frozenset(singular - _STOPWORDS)
 
 
 def norm_exact(title: str) -> tuple[str, ...]:
-    """Casefold + naive singularize, ORDER preserved, stopwords kept. Used
-    only for the `exact` tier — a trivial rename/pluralisation of the same
-    concept, not just topically-close titles."""
+    """Return casefolded, singularized words in order, stopwords kept.
+
+    Only the ``exact`` tier uses it, to catch a rename or plural of the same
+    concept.
+    """
     words = re.findall(r"[a-z0-9]+", title.lower())
     return tuple(w[:-1] if w.endswith("s") and len(w) > 3 else w for w in words)
 
 
 def landing_note_stems(notes_dir: Path) -> set[str]:
-    """Concept stems that are bower landing pages — one per `brain/bowers/`
-    subdirectory, named to match it exactly (`agents/` -> `agents.md`).
-    These are folder indexes, not concepts: excluded from candidacy entirely,
-    never a winner OR a loser."""
+    """Return the stems of bower landing notes, one per bowers/ folder.
+
+    A landing note shares its folder's name and indexes it, so it is never a
+    merge winner or loser.
+    """
     if not notes_dir.is_dir():
         return set()
     return {d.name for d in notes_dir.iterdir() if d.is_dir()}
 
 
 def load_concepts(notes_dir: Path) -> dict[str, Path]:
+    """Map every mergeable concept stem to its path."""
     excluded = landing_note_stems(notes_dir)
     if not notes_dir.is_dir():
         return {}
@@ -117,9 +124,11 @@ def load_concepts(notes_dir: Path) -> dict[str, Path]:
 
 
 def synthesized_stems(concepts: dict[str, Path]) -> set[str]:
-    """Concept stems whose file carries a `<!-- bower:concept ... -->`
-    synthesis block — hand-earned prose with citations. These must never be
-    the merge loser."""
+    """Return the stems of concepts that carry a synthesis block.
+
+    That block is earned prose with citations, so such a concept is never the
+    merge loser.
+    """
     return {
         stem
         for stem, path in concepts.items()
@@ -141,8 +150,9 @@ def load_feeders(sources_dir: Path, concepts: dict[str, Path]) -> dict[str, set[
     return feeders
 
 
-@dataclass(frozen=True)
-class MergeCandidate:
+class MergeCandidate(BaseModel, frozen=True):
+    """A proposed merge of two concept titles, with its evidence."""
+
     loser: str
     winner: str
     tier: str
@@ -152,6 +162,7 @@ class MergeCandidate:
     winner_sources: int
 
     def line(self) -> str:
+        """Render the candidate as one checkbox line of the merge map."""
         return (
             f"- [ ] [[{self.loser}]] → [[{self.winner}]]  "
             f"({self.tier}, sim={self.sim:.2f}, shared={self.shared}, "
@@ -160,6 +171,7 @@ class MergeCandidate:
 
 
 def classify_tier(a: str, b: str, sim: float, shared: int) -> str:
+    """Return ``exact``, ``high`` or ``review`` for a pair of titles."""
     if norm_exact(a) == norm_exact(b):
         return "exact"
     if sim >= _HIGH_SIM and shared >= 1:
@@ -172,7 +184,7 @@ def propose(
     feeders: dict[str, set[str]],
     synthesized: set[str],
 ) -> tuple[list[MergeCandidate], int]:
-    """Returns (candidates, pairs dropped to protect a synthesized concept)."""
+    """Return the candidates and the count of pairs dropped to protect synthesis."""
     candidates = []
     dropped = 0
     for a, b in combinations(sorted(concepts), 2):
@@ -251,13 +263,11 @@ containing their word and produce garbage pairs.
 
 
 def format_map(candidates: list[MergeCandidate]) -> str:
+    """Render the merge map, grouped by tier, most similar first."""
     parts = [_HEADER]
     by_tier = {tier: [c for c in candidates if c.tier == tier] for tier in _TIERS}
     for tier in _TIERS:
-        # Similarity first, shared feeders as the tie-break. Ranking by
-        # shared feeders instead surfaced co-occurring but distinct concepts
-        # at the top of the list (measured 2026-07-29) — synonymy is what a
-        # merge needs, and only the title similarity measures that.
+        # Shared feeders rank co-occurring concepts; only similarity is synonymy.
         group = sorted(by_tier[tier], key=lambda c: (-c.sim, -c.shared))
         parts.append(f"\n## {tier} ({len(group)})\n")
         parts.extend(f"{c.line()}\n" for c in group)
@@ -265,6 +275,7 @@ def format_map(candidates: list[MergeCandidate]) -> str:
 
 
 def main() -> int:
+    """Write the merge map for a human to approve pairs in."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument(

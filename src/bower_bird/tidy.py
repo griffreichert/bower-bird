@@ -1,28 +1,3 @@
-"""`bb tidy` — weave's bookkeeping half (D5, notes/2026-07-25-retrieval-plan.md).
-
-Zero LLM calls, zero network — same class as `bb lint`, but this is the one
-piece here that writes. Three jobs, each independently useful:
-
-  1. Rebuild `_index.md`'s `## Pages` section from what actually exists under
-     brain/ (sources/ + bowers/, recursively) — `catalog.upsert_index_line`
-     maintains it incrementally per-capture and it drifts. Preserves each
-     page's existing category + one-liner where a catalog line already names
-     it; never invents one for a page that has none.
-  2. File a flat-root concept (`brain/bowers/<title>.md`) into a bower
-     (`brain/bowers/<bower>/<title>.md`) when >=2 of the concepts it links to
-     (its `## Links` section) already live in that same bower. A tie across
-     bowers, or fewer than 2 matches, is left flat — ambiguous filing is worse
-     than a flat concept. Moving needs no link rewriting: Obsidian resolves
-     `[[wikilinks]]` by stem regardless of folder.
-  3. Report what it cannot fix: `bb lint`'s broken links and orphan nodes are
-     read out, never silently stubbed or deleted — those need a human call.
-
-Default is `--dry-run` (prints the plan, writes nothing); `--apply` performs
-the index rewrite and the filing moves. Every write goes through
-`ingest.assert_writable`. Nothing is ever overwritten: a filing move that
-would collide with an existing file is skipped, not clobbered.
-"""
-
 import re
 from collections import Counter
 from pathlib import Path
@@ -41,8 +16,10 @@ _ONELINER_LIMIT = 140
 
 
 def parse_page_lines(index_text: str) -> dict[str, tuple[str, str]]:
-    """Existing catalog lines as stem -> (category, oneline). Tolerant of a
-    bare title-only line (both default to '')."""
+    """Parse catalog lines into ``stem -> (category, oneline)``.
+
+    A bare title line parses with both fields empty.
+    """
     parsed = {}
     for stem, rest in _PAGE_LINE_RE.findall(index_text):
         parts = rest.split(" · ")
@@ -53,8 +30,10 @@ def parse_page_lines(index_text: str) -> dict[str, tuple[str, str]]:
 
 
 def index_prefix(old_text: str) -> str:
-    """Everything up to and including the '## Pages' heading, preserved
-    verbatim — only the line list below it gets rebuilt from disk."""
+    """Return the index text up to and including the ``## Pages`` heading.
+
+    Only the line list below the heading is rebuilt from disk.
+    """
     if _PAGES_HEADING in old_text:
         head = old_text.split(_PAGES_HEADING, 1)[0]
         return f"{head}{_PAGES_HEADING}\n"
@@ -63,8 +42,11 @@ def index_prefix(old_text: str) -> str:
 
 
 def page_stems(config: Config) -> list[str]:
-    """Every brain/ page tidy's index catalogs: sources/ + bowers/ (recursive).
-    People/tools are unquizzed leaves and were never part of this catalog."""
+    """Return the stem of every page the index catalogs.
+
+    Covers sources/ and bowers/ recursively. People and tools are leaves and
+    stay out of the catalog.
+    """
     stems = []
     if config.sources_dir.is_dir():
         stems += [p.stem for p in config.sources_dir.glob("*.md")]
@@ -74,10 +56,10 @@ def page_stems(config: Config) -> list[str]:
 
 
 def concept_definitions(config: Config) -> dict[str, str]:
-    """stem -> a short definition, for concept notes under `notes_dir` whose
-    `<!-- bower:concept -->` block has a `**Definition:** ...` line.
+    """Map concept stems to the first sentence of their definition.
 
-    Synthesized concepts carry a real definition; capture-time stubs
+    Reads the ``**Definition:**`` line inside a concept block. Synthesized
+    concepts carry a real definition; capture time stubs
     (`upsert_index_line(..., "", insert_only=True)`) never do — this backfills
     `rebuild_index`'s empty one-liners with something meaningful instead of
     leaving them bare forever. First sentence only, markdown emphasis
@@ -100,13 +82,24 @@ def concept_definitions(config: Config) -> dict[str, str]:
 
 
 class IndexRebuild(BaseModel):
+    """A rebuilt ``_index.md`` and how it differs from the old catalog."""
+
     text: str
     pages: int
-    added: list[str] = Field(default_factory=list)  # on disk, no catalog line yet
-    dropped: list[str] = Field(default_factory=list)  # catalogued, no page on disk
+    added: list[str] = Field(
+        default_factory=list, description="Pages on disk with no catalog line yet."
+    )
+    dropped: list[str] = Field(
+        default_factory=list, description="Catalog lines with no page on disk."
+    )
 
 
 def rebuild_index(config: Config) -> IndexRebuild:
+    """Rebuild the ``## Pages`` list from the pages that exist on disk.
+
+    Each page keeps its existing category and one liner. An empty one liner
+    takes the concept definition when there is one; nothing else is invented.
+    """
     old_text = read_index(config)
     old_lines = parse_page_lines(old_text)
     definitions = concept_definitions(config)
@@ -129,14 +122,15 @@ def rebuild_index(config: Config) -> IndexRebuild:
 
 
 class FilingProposal(BaseModel):
+    """A flat concept and the bower its links point into."""
+
     path: Path
     bower: str
-    matched: int  # linked concepts already filed in `bower`
+    matched: int = Field(description="Linked concepts already filed in `bower`.")
 
 
 def bower_of_concept(config: Config) -> dict[str, str]:
-    """stem -> bower name, for every concept already filed under a
-    brain/bowers/<bower>/ subfolder."""
+    """Map each concept filed under a ``brain/bowers/<bower>/`` folder to it."""
     mapping: dict[str, str] = {}
     if not config.notes_dir.is_dir():
         return mapping
@@ -148,9 +142,10 @@ def bower_of_concept(config: Config) -> dict[str, str]:
 
 
 def propose_filings(config: Config) -> list[FilingProposal]:
-    """Flat concepts that link (via `## Links`) to >=2 concepts already filed
-    in the same bower. A tie at the top between two bowers is ambiguous and
-    left flat.
+    """Propose a bower for flat concepts whose links point into one.
+
+    A concept qualifies when its ``## Links`` reach 2 or more concepts filed
+    in the same bower. A tie between two bowers is ambiguous and stays flat.
 
     A flat note whose stem names an existing bower folder (`life.md` next to
     `bowers/life/`) is that bower's own landing note, not a concept to file
@@ -179,8 +174,10 @@ def propose_filings(config: Config) -> list[FilingProposal]:
 
 
 def apply_filing(config: Config, proposal: FilingProposal) -> Path | None:
-    """Move a flat concept into its proposed bower. Returns the new path, or
-    None if a file with that name is already there — never overwrites."""
+    """Move a flat concept into its proposed bower and return the new path.
+
+    Returns None without moving when a file with that name is already there.
+    """
     dest_dir = config.notes_dir / proposal.bower
     dest = dest_dir / proposal.path.name
     if dest.exists():
@@ -192,6 +189,13 @@ def apply_filing(config: Config, proposal: FilingProposal) -> Path | None:
 
 
 def main(config: Config, apply: bool = False) -> int:
+    """Run `bb tidy`, the bookkeeping half of weave, with no LLM calls.
+
+    Rebuilds the ``_index.md`` page list, files flat concepts into bowers,
+    and reports broken links and orphan nodes for a human. Prints the plan
+    only unless ``apply`` is set. Every write goes through
+    ``ingest.assert_writable``, and a move never overwrites a file.
+    """
     mode = "apply" if apply else "dry-run"
     print(f"tidy ({mode}):")
 

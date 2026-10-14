@@ -8,26 +8,17 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from bower_bird.config import Config
 from bower_bird.schema import Review, ReviewEntry
 
-# ---------------------------------------------------------------------------
-# Leitner constants
-# ---------------------------------------------------------------------------
-
 LEITNER_LADDER: list[int] = [1, 3, 7, 16, 35, 75]
 """Days between reviews for each Leitner box (0-indexed)."""
 
 Grade = Literal["strong", "weak", "wrong"]
 
-#: Session shape (#18): cap 10 cards/session, oldest-due first, real reviews
-#: (non-empty history) ordered before teach cards (empty history).
 SESSION_CAP = 10
+"""Cards per peck session; real reviews come before teach cards."""
 
 #: A bad_streak at or above this flags thin key ideas for weave fodder.
 BAD_STREAK_FLAG = 2
 
-
-# ---------------------------------------------------------------------------
-# ReviewStore — load / save / mutate
-# ---------------------------------------------------------------------------
 
 _ReviewMap = TypeAdapter(dict[str, Review])
 
@@ -81,10 +72,10 @@ class ReviewStore:
         return True
 
     def sync_sources(self, config: Config) -> list[str]:
-        """Enrol any brain/sources/ node not yet in the store (#18, enrol-by-sync).
+        """Enrol every brain/sources/ node not yet in the store.
 
-        No ingest-side coupling: this is the *only* place a source's id enters
-        the store. Returns the list of newly-enrolled ids.
+        This is the only place a source's id enters the store; capture never
+        writes it. Returns the newly enrolled ids.
         """
         added: list[str] = []
         for node_id in scan_sources(config):
@@ -113,13 +104,16 @@ class ReviewStore:
         return [r for r in self._entries.values() if not r.retired and r.due <= pivot]
 
     def get(self, node_id: str) -> Review | None:
+        """Return the review entry for ``node_id``, or None."""
         return self._entries.get(node_id)
 
     def session(
         self, today: date | None = None, cap: int = SESSION_CAP
     ) -> list[Review]:
-        """Due nodes for one peck session: real reviews before teach cards,
-        oldest-due-first within each group, capped at ``cap``."""
+        """Return the due nodes for one peck session, at most ``cap``.
+
+        Real reviews come before teach cards, oldest due first in each group.
+        """
         due = sorted(self.due_today(today), key=lambda r: r.due)
         real = [r for r in due if not r.is_teach]
         teach = [r for r in due if r.is_teach]
@@ -167,9 +161,11 @@ class ReviewStore:
         return updated
 
     def teach(self, node_id: str, today: date | None = None) -> Review:
-        """Teach-first completion: no question/judge/grade — due bumps to
-        tomorrow, ``taught`` set so the card quizzes next session; box +
-        history + bad_streak untouched."""
+        """Mark a teach card as taught and make it due tomorrow.
+
+        No question, judge or grade runs. The card quizzes next session; box,
+        history and bad_streak are untouched.
+        """
         review = self._entries[node_id]
         pivot = today or date.today()
         updated = review.model_copy(
@@ -193,15 +189,10 @@ class ReviewStore:
         return updated
 
 
-# ---------------------------------------------------------------------------
-# touch — weave's harvest due-pull hook (#29)
-# ---------------------------------------------------------------------------
-
-
 def touch(store: ReviewStore, ids: list[str]) -> int:
     """Pull due dates forward to today for harvested nodes.
 
-    The highlight-harvest contract (#29): when weave appends new key ideas to
+    When weave appends new key ideas to
     a source node, fresh material should get quizzed while warm. For each id
     present in the store, sets ``due = min(due, today)`` — box, last_grade,
     reviews, retired, and bad_streak are untouched (a retired node stays
@@ -223,11 +214,6 @@ def touch(store: ReviewStore, ids: list[str]) -> int:
     return touched
 
 
-# ---------------------------------------------------------------------------
-# ShelfCensus — one bucket model, rendered identically everywhere (#20)
-# ---------------------------------------------------------------------------
-
-
 class ShelfCensus(BaseModel):
     """Nodes bucketed by Leitner box, computed from a ReviewStore.
 
@@ -246,6 +232,7 @@ class ShelfCensus(BaseModel):
 
     @classmethod
     def from_store(cls, store: ReviewStore) -> "ShelfCensus":
+        """Count the store's nodes in each Leitner bucket."""
         strangers = climbing = known = retired = 0
         for r in store._entries.values():
             if r.retired:
@@ -265,23 +252,19 @@ class ShelfCensus(BaseModel):
         )
 
     def render(self) -> str:
+        """Render the census as one status line."""
         return (
             f"shelf: {self.total} nodes — {self.strangers} strangers · "
             f"{self.climbing} climbing · {self.known} known · {self.retired} retired"
         )
 
 
-# ---------------------------------------------------------------------------
-# Source node scanning (brain/sources/) — key ideas, seed, linked titles
-# ---------------------------------------------------------------------------
-
 _ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
 _TITLE_RE = re.compile(r'^title:\s*"?(.+?)"?\s*$', re.MULTILINE)
 _KEY_IDEAS_RE = re.compile(
     r"^## Key ideas\n(.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL
 )
-# `## Seed thoughts` is the #13 node schema; `## Note` is the pre-antilibrary
-# section name — keep parsing it so legacy nodes stay quizzable until backfill.
+# `## Note` is the older name for `## Seed thoughts`; old nodes still use it.
 _NOTE_RE = re.compile(
     r"^## (?:Seed thoughts|Note)\n(.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL
 )
@@ -317,8 +300,7 @@ def parse_source_node(path: Path) -> SourceNode | None:
     seed = ""
     note_m = _NOTE_RE.search(text)
     if note_m:
-        # Seed thoughts are stored as `- ` bullets (#13); legacy ## Note was
-        # bare prose. Strip the bullet markers either way.
+        # Seed thoughts are bullets; the older ## Note was bare prose.
         lines = [ln.lstrip("- ").strip() for ln in note_m.group(1).splitlines()]
         seed = " ".join(ln for ln in lines if ln)
 

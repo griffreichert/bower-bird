@@ -1,29 +1,25 @@
-"""Telegram Bot API: pull the queue with getUpdates, send receipts.
-
-No webhook, no public server. Telegram's own servers hold the queue (~24h)
-until we pull it from the laptop. getUpdates with a running offset is the
-whole mechanism.
-"""
-
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 
 
 class Update(BaseModel):
+    """One Telegram message the bot received."""
+
     model_config = ConfigDict(frozen=True)
 
     update_id: int
     chat_id: int
     text: str
-    # Sender display name — the paste lane's "sender as author" needs an
-    # identity to attribute pasted prose to; first_name is the friendliest
-    # available field, username the fallback for accounts without one.
-    author: str = ""
+    author: str = Field(
+        default="",
+        description="Sender first name, else username; the paste lane's author.",
+    )
 
 
 def api_url(token: str, method: str) -> str:
+    """Return the Bot API URL for ``method``."""
     return API_BASE.format(token=token, method=method)
 
 

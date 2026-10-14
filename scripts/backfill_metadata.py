@@ -40,8 +40,10 @@ class ParsedNote(BaseModel):
 
 
 def parse_note(text: str) -> ParsedNote | None:
-    """Split a note into frontmatter + body and pull the fields we rewrite.
-    None if the file has no frontmatter block at all."""
+    """Split a note into frontmatter and body, and pull the rewritten fields.
+
+    Returns None when the file has no frontmatter block.
+    """
     m = _FRONTMATTER_RE.match(text)
     if not m:
         return None
@@ -71,8 +73,7 @@ def parse_note(text: str) -> ParsedNote | None:
 
 
 def parse_index_categories(index_text: str) -> dict[str, str]:
-    """title -> category, from `_index.md` lines (`catalog.upsert_index_line`
-    format: `- [[title]] · category · oneline`)."""
+    """Map titles to categories from ``- [[title]] · category · oneline`` lines."""
     cats: dict[str, str] = {}
     for line in index_text.splitlines():
         m = _INDEX_LINE_RE.match(line)
@@ -85,7 +86,7 @@ def parse_index_categories(index_text: str) -> dict[str, str]:
 
 
 def derive_topics(rest: str) -> list[str]:
-    """This node's OWN `## Links` wikilinks — never `## Sources`."""
+    """Return the note's own ``## Links`` wikilinks, never ``## Sources``."""
     m = _LINKS_SECTION_RE.search(rest)
     if not m:
         return []
@@ -94,7 +95,9 @@ def derive_topics(rest: str) -> list[str]:
 
 def clean_tags(tags: list[str]) -> tuple[list[str], int, int]:
     """Drop leaked wikilink tags and anything outside the allowlist.
-    Returns (cleaned, wikilink_tags_stripped, junk_tags_dropped)."""
+
+    Returns ``(cleaned, wikilink_tags_stripped, junk_tags_dropped)``.
+    """
     cleaned, wikilinks, junk = [], 0, 0
     for t in tags:
         if t in _ALLOWED_TAGS:
@@ -165,6 +168,7 @@ def transform_note(
 
 
 def main() -> int:
+    """Backfill topics, category and clean tags; ``--dry-run`` only reports."""
     dry_run = "--dry-run" in sys.argv[1:]
     config = Config()
     index_categories = parse_index_categories(

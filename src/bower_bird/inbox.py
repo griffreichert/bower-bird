@@ -1,19 +1,3 @@
-"""Inbox gather: process Web Clipper drops in `BowerBird/inbox/`.
-
-Antilibrary model (2026-07-13): every capture is shelved immediately, no
-reading gate. `inbox/` is the Web Clipper's transient drop target only — the
-pull consumes whatever landed there within one tick, never a queue to leave
-things in.
-
-The clipper already wrote clean markdown — so we skip `fetch.py` entirely and
-synthesise from the clip body, which sidesteps the scraper's failure on
-JS-heavy / login-walled pages (e.g. X).
-
-Per clip: parse frontmatter + body, dedup by content hash (state lives in the
-repo, so it survives the move), synthesise a source note + asserted links, then
-move the original clip to `archive/` (non-destructive).
-"""
-
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +48,7 @@ def parse_clip(text: str) -> tuple[dict[str, str], str]:
 def clip_to_meta(
     path: Path, fm: dict[str, str], body: str, fallback_url: str = ""
 ) -> PageMeta:
+    """Build page metadata from a clip's frontmatter and body."""
     return PageMeta(
         url=fm.get("source") or fm.get("url") or fallback_url or "",
         title=fm.get("title") or path.stem,
@@ -74,9 +59,11 @@ def clip_to_meta(
 
 
 def archive_clip(config: Config, path: Path, new_stem: str | None = None) -> None:
+    """Move a processed clip into archive/, renamed to ``new_stem`` if given.
+
+    The content is untouched. A name collision gets a timestamp suffix.
+    """
     config.archive_dir.mkdir(parents=True, exist_ok=True)
-    # The cold copy can carry the concise (fluff-free) name once we have one;
-    # content is untouched, only the filename shortens.
     stem = ingest.safe_filename(new_stem) if new_stem else path.stem
     dest = config.archive_dir / f"{stem}{path.suffix}"
     if dest.exists():
@@ -89,17 +76,15 @@ def archive_clip(config: Config, path: Path, new_stem: str | None = None) -> Non
 def file_clip(
     config: Config, meta: PageMeta, body: str
 ) -> tuple[Path | None, str, str]:
-    """Synthesise one read body into the graph: marks → plan → source note +
-    entities + index/log upkeep. Shared by whole-doc clips and tweet-digest
-    sections. Returns (note_path, display_title, log_detail).
+    """Synthesize one clip body into a source note, leaf notes and catalog lines.
+
+    Returns ``(note_path, display_title, log_detail)``.
     """
     body_urls = extract_urls(body)
     if not meta.url:
         meta = meta.model_copy(update={"url": pick_source_url(body_urls)})
 
-    # Marks come from the RAW body (they carry the directive tokens);
-    # everything synthesised or stored uses the cleaned copy so `#promote`
-    # et al. never leak into the node or bias extraction.
+    # Marks come from the raw body; everything stored uses the cleaned copy.
     marks = extract_marks(body, self_url=meta.url)
     clean = strip_directives(body)
     meta = meta.model_copy(update={"body_excerpt": clean[:_BODY_LIMIT]})
@@ -123,17 +108,14 @@ def file_clip(
         config, meta, plan, marks=marks, full_body=clean
     )
 
-    # Concise (fluff-free) title threads through the source ref + the archive
-    # name so the graph node, its backlinks, and the cold copy all match.
+    # One concise title names the node, its backlinks and the archived copy.
     display_title = (plan.concise_title or meta.title).strip() or meta.title
     source_title = ingest.safe_filename(display_title)
 
     # File named entities (tools, people) as their own leaf nodes.
     entity_ids = nodes.file_entities(config, plan, source_title)
 
-    # Catalog the new source in the index (full line) and ensure each linked
-    # concept has a stub line (insert-only — never clobber weave's richer
-    # text). Log the build. Only for a freshly written source note.
+    # Concept stub lines are insert only, so weave's richer text survives.
     if note_path is not None:
         catalog.upsert_index_line(config, source_title, plan.category, plan.description)
         for topic in plan.topics:
@@ -190,9 +172,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
         meta = clip_to_meta(
             path, fm, body, fallback_url=pick_source_url(extract_urls(body))
         )
-        # Same source re-clipped gets fresh bytes + a fresh LLM title, so the
-        # content hash misses it — guard on the source URL too. Skip when absent,
-        # else every url-less clip would collide on "".
+        # A re-clip of the same source misses the content hash; check its URL.
         if meta.url and state.seen_url(meta.url):
             archive_clip(config, path, new_stem=meta.title)
             log.append(f"dup {path.name}: url already processed, archived")
@@ -200,7 +180,7 @@ def process_inbox(config: Config, state: State) -> list[str]:
 
         try:
             note_path, display_title, detail = file_clip(config, meta, body)
-        except Exception as exc:  # noqa: BLE001 — one bad clip must not stall the rest
+        except Exception as exc:
             log.append(f"error {path.name}: {exc}")
             continue
 
