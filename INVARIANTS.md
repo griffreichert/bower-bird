@@ -28,7 +28,8 @@ folder, it's in the wrong document.
   and cited to them.
 
 ### Boundaries
-- **Containment.** Owns one vault folder; touches nothing outside it; isolated
+- **Containment.** Owns one vault folder and one flashcard deck of its own
+  cards; touches nothing outside them; isolated
   from other services it runs beside.
 - **Least blast radius.** Unattended work is least-privilege and non-destructive;
   high-stakes or untrusted-web actions are gated behind a deliberate human step.

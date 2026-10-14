@@ -1,0 +1,29 @@
+{
+  "name": "bower-bird-mcp",
+  "version": "0.1.0",
+  "description": "MCP stdio shim exposing bower-bird's retrieval verbs (bb ask) to any MCP client.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "bower-bird-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

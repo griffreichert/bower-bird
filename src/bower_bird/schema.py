@@ -6,7 +6,7 @@ their own module — this file is contracts only.
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # --------------------------------------------------------------------------- #
 # router.py — how a Telegram send was routed
@@ -285,3 +285,95 @@ class Review(BaseModel):
         """Teach-first card: show key ideas, no question/judge/grade. True until
         the card has been taught once (``taught``) or graded (``reviews``)."""
         return not self.reviews and not self.taught
+
+
+# --------------------------------------------------------------------------- #
+# recall.py — bb ask's ranked claim contract (stable: consumed by an MCP shim)
+# --------------------------------------------------------------------------- #
+
+
+class Claim(BaseModel):
+    """One retrievable claim — a source's key-idea bullet, or a concept's
+    synthesized bullet. The unit `bb ask` ranks over."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str = Field(description="The bullet, verbatim.")
+    node: str = Field(description="Note stem — for [[wikilink]] and `bb read`.")
+    kind: Literal["concept", "source"] = Field(
+        description="'concept' claims (synthesized, multi-source) rank above "
+        "'source' claims (raw, single-source)."
+    )
+    url: str = Field(default="", description="Source frontmatter URL, when present.")
+    topics: list[str] = Field(default_factory=list, description="Frontmatter topics.")
+
+
+# --------------------------------------------------------------------------- #
+# llm.py — write_cards / rewrite_card structured output
+# --------------------------------------------------------------------------- #
+
+
+class CardDraft(BaseModel):
+    """One Anki card written for one claim. The claim itself is shown verbatim
+    under the answer, so the draft only carries the question and a short answer.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    front: str = Field(
+        description="The question. Shown with no other context, so it names "
+        "its subject. Asks for one thing. Never refers to 'the article', 'the "
+        "author' or 'this source'."
+    )
+    back: str = Field(
+        description="The answer in at most 30 words, drawn ONLY from the claim "
+        "— never from outside knowledge."
+    )
+
+
+class CardPlan(BaseModel):
+    """Cards for one source: exactly one per claim, in the order supplied."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cards: list[CardDraft] = Field(
+        description="One card per claim, same order as the claims."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# anki.py — AnkiConnect responses (external input)
+# --------------------------------------------------------------------------- #
+
+
+class AnkiNote(BaseModel):
+    """One note from AnkiConnect's `notesInfo`."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    note_id: int = Field(alias="noteId")
+    tags: list[str]
+    fields: dict[str, str] = Field(description="Field name -> stored HTML value.")
+    cards: list[int] = Field(description="Card ids generated from this note.")
+
+    @field_validator("fields", mode="before")
+    @classmethod
+    def _flatten_fields(cls, v: dict[str, dict]) -> dict[str, str]:
+        """AnkiConnect sends `{name: {"value": ..., "order": ...}}`."""
+        return {name: field["value"] for name, field in v.items()}
+
+
+class AnkiCard(BaseModel):
+    """One card's scheduling state from AnkiConnect's `cardsInfo`."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    card_id: int = Field(alias="cardId")
+    note: int = Field(description="Id of the note this card belongs to.")
+    interval: int = Field(
+        description="Days until the next review; negative means seconds "
+        "(a card still in learning)."
+    )
+    reps: int = Field(description="Total reviews. 0 = never seen.")
+    lapses: int = Field(description="Times the card was forgotten after graduating.")
+    flags: int = Field(description="Reader's flag colour. 0 = none, 1 = red.")

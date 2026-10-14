@@ -19,7 +19,14 @@ import anthropic
 from anthropic import omit
 
 from bower_bird.config import LLMSettings
-from bower_bird.schema import ClippingPlan, JudgeVerdict, PageMeta, QuizQuestion
+from bower_bird.schema import (
+    CardDraft,
+    CardPlan,
+    ClippingPlan,
+    JudgeVerdict,
+    PageMeta,
+    QuizQuestion,
+)
 
 
 def key_ideas_block(key_ideas: list[str], seed: str) -> str:
@@ -130,6 +137,70 @@ def judge_answer(
     return verdict
 
 
+CARD_RULES = (
+    "- The question is shown with no other context, so name its subject. Never "
+    "say 'the article', 'the author' or 'this source'.\n"
+    "- Ask for one thing. Prefer why / how / what-happens-when over yes/no and "
+    "over 'list the N things'.\n"
+    "- The answer is at most 30 words and drawn ONLY from the claim — never "
+    "add a fact from outside it. The full claim is shown under your answer, so "
+    "do not restate all of it."
+)
+
+
+def write_cards(title: str, claims: list[str], llm: LLMSettings) -> CardPlan | None:
+    """Write one Anki card per claim for a single source (Haiku).
+
+    Grounded ONLY on the claims — the distilled key ideas already on the node.
+    Returns None on a refusal; the caller must check the plan holds exactly
+    one card per claim before using it.
+    """
+    numbered = "\n".join(f"{i}. {claim}" for i, claim in enumerate(claims, 1))
+    prompt = (
+        "You are writing spaced-repetition flashcards for a learner's own "
+        "knowledge vault. Write exactly ONE card per claim below, in the same "
+        "order.\n\n"
+        f"{CARD_RULES}\n\n"
+        f"Source title (context only): {title}\n\n"
+        f"Claims:\n{numbered}"
+    )
+    response = anthropic_client().messages.parse(
+        model=llm.model,
+        max_tokens=llm.card_max_tokens,
+        output_config={"effort": llm.effort},
+        messages=[{"role": "user", "content": prompt}],
+        output_format=CardPlan,
+    )
+    return response.parsed_output
+
+
+def rewrite_card(
+    claim: str, front: str, back: str, problem: str, llm: LLMSettings
+) -> CardDraft | None:
+    """Replace a card that review showed is not working (Haiku).
+
+    `problem` is one sentence saying what went wrong and what to change. The
+    claim stays the ground truth; only the question and short answer move.
+    Returns None on a refusal.
+    """
+    prompt = (
+        "You are fixing a spaced-repetition flashcard in a learner's own "
+        f"knowledge vault. {problem}\n\n"
+        f"{CARD_RULES}\n\n"
+        f"Claim (ground truth): {claim}\n"
+        f"Current question: {front}\n"
+        f"Current answer: {back}"
+    )
+    response = anthropic_client().messages.parse(
+        model=llm.model,
+        max_tokens=llm.question_max_tokens,
+        output_config={"effort": llm.effort},
+        messages=[{"role": "user", "content": prompt}],
+        output_format=CardDraft,
+    )
+    return response.parsed_output
+
+
 def anthropic_client() -> anthropic.Anthropic:
     # Reads ANTHROPIC_API_KEY from the environment.
     return anthropic.Anthropic()
@@ -173,9 +244,10 @@ def synthesize_clipping(
     body_urls: list[str] | None = None,
     person_anchors: list[str] | None = None,
 ) -> ClippingPlan:
-    # candidate_index is the raw `_index.md` catalog — one line per existing
-    # brain/ page (`- [[title]] · category · one-liner`). It is the single,
-    # compact link-candidate + category source (no per-page reads).
+    # candidate_index is a relevance-ranked subset of `_index.md`, most-
+    # relevant-to-this-source first, each line `- [[title]] · category ·
+    # one-liner` (one-liner may be empty). It is the single, compact
+    # link-candidate + category source (no per-page reads).
     candidates = candidate_index.strip() or "(none yet)"
     highlights = highlights or []
     body_urls = body_urls or []
@@ -214,7 +286,10 @@ def synthesize_clipping(
         "List the coarse topics this source feeds — a rich source usually feeds "
         "SEVERAL (don't force it down to one). PREFER titles already in the index "
         "below; add a new topic only when none fits and it's broad enough to "
-        "reuse. Each topic is a SHORT, REUSABLE concept handle (a 2-5 word noun "
+        "reuse. A precise new topic beats a stretched existing one — don't force "
+        "this source onto a listed title whose meaning doesn't actually cover it. "
+        "The candidates below are ordered most-relevant-to-this-source first. "
+        "Each topic is a SHORT, REUSABLE concept handle (a 2-5 word noun "
         "phrase many sources could link to, e.g. 'Agentic loops'), NOT a sentence "
         "or claim, NOT the source title.\n\n"
         "Assign a single top-level CATEGORY (a short lowercase noun). REUSE a "

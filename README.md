@@ -132,6 +132,13 @@ sources into `bowers/`).
 - **`bb peck`** — spaced-repetition recall session over due source nodes;
   Leitner-scheduled, LLM-as-judge graded, teach-first (a never-quizzed node
   shows you its key ideas before it ever quizzes you).
+- **`bb anki`** — Anki as the review front end. `push` writes one card per
+  source key idea into an owned `BowerBird` deck (Haiku, idempotent by claim
+  hash, concept links mirrored as `bb::concept::` tags). `harvest` reads review
+  state back: a red flag or 3 lapses rewrites the card, and
+  `digests/recall-map.md` rolls recall up by concept. Needs Anki open with the
+  AnkiConnect add-on (2055492159). Suspend a card to retire it; a deleted card
+  returns on the next push.
 - **`bb drain`** — retries the `to-clip.md` queue's unchecked X links through
   the resolver.
 - **`/forage`** (Claude Code skill) — outward web hunt from a gap signal or

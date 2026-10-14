@@ -8,8 +8,14 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   prune            Delete cold archive/ husks older than the TTL (manual, confirmed).
   drain            Resolve unchecked X links in to-clip.md into source nodes.
   lint             Read-only structural graph lint (orphans, broken links).
+  tidy             Weave's bookkeeping half: index rebuild + concept filing
+                    (zero LLM, dry-run by default — pass --apply to write).
+  stale            Ranked weave queue: which concept to synthesize next.
+  ask              Ranked claim recall over the graph (read-only, no LLM).
   touch            Pull review due-dates to today for harvested nodes (weave's
                     hook, #29).
+  anki             Anki front end: push claims to the deck as cards, harvest
+                    review signals back (needs Anki open with AnkiConnect).
 """
 
 import sys
@@ -80,6 +86,50 @@ def main() -> int:
 
         return lint_main(config)
 
+    if subcommand == "tidy":
+        apply = "--apply" in args[1:]
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.tidy import main as tidy_main
+
+        return tidy_main(config, apply=apply)
+
+    if subcommand == "stale":
+        rest = args[1:]
+        limit = 20
+        if "--limit" in rest:
+            i = rest.index("--limit")
+            limit = int(rest[i + 1])
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.stale import main as stale_main
+
+        return stale_main(config, limit=limit)
+
+    if subcommand == "ask":
+        rest = args[1:]
+        as_json = "--json" in rest
+        rest = [a for a in rest if a != "--json"]
+        limit = 20
+        if "--limit" in rest:
+            i = rest.index("--limit")
+            limit = int(rest[i + 1])
+            del rest[i : i + 2]
+        query = " ".join(rest).strip()
+        if not query:
+            print('bb ask: usage: bb ask "<query>" [--json] [--limit N]')
+            return 2
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.recall import ask, format_json, format_text
+
+        claims = ask(config, query, limit=limit)
+        print(format_json(claims) if as_json else format_text(claims))
+        return 0
+
     if subcommand == "touch":
         ids = args[1:]
         if not ids:
@@ -94,6 +144,14 @@ def main() -> int:
         count = touch(store, ids)
         print(f"bb touch: pulled {count} node(s) due to today.")
         return 0
+
+    if subcommand == "anki":
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.anki import main as anki_main
+
+        return anki_main(config, args[1:])
 
     if subcommand == "drain":
         from bower_bird.app import run_drain

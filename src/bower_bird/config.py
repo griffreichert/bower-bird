@@ -83,6 +83,36 @@ class LLMSettings(BaseModel):
         gt=0,
         description="Cap for generate_question: thinking plus the question.",
     )
+    card_max_tokens: int = Field(
+        default=1600,
+        gt=0,
+        description="Cap for write_cards' plan — one question + short answer "
+        "per claim, for every claim on a source.",
+    )
+    topic_relevance_limit: int = Field(
+        default=40,
+        gt=0,
+        description="Max concept titles selected by relevance to the source "
+        "being shelved — the query-matched half of candidate_index's "
+        "two-part list. Popularity alone (topic_candidate_limit) buries "
+        "low-count-but-on-topic concepts below the cut (measured 2026-07-28: "
+        "the Harvey source's actually-relevant concepts, e.g. 'Data "
+        "extraction', all sat at feeding-source count 1, well below the "
+        "popularity cutoff).",
+    )
+    topic_candidate_limit: int = Field(
+        default=30,
+        gt=0,
+        description="Max concept titles in candidate_index's popularity half "
+        "— the always-present backbone, ranked by inbound-link count "
+        "(sources + tool/people leaves). Not "
+        "the whole candidate list: topic_relevance_limit supplies the "
+        "query-relevant half ahead of it. The full ~320-title index buries "
+        "the 'prefer an existing title' instruction and Haiku coins new ones "
+        "instead (measured: 221 singleton topics) — capping to the "
+        "most-fed concepts keeps the preferred targets small enough to "
+        "matter.",
+    )
 
 
 class Config(BaseSettings):
@@ -121,6 +151,9 @@ class Config(BaseSettings):
     vault_path: Path = Field(
         default=None, alias="BOWER_VAULT_PATH", validate_default=True
     )
+    # AnkiConnect's local HTTP endpoint (add-on 2055492159). Only reachable
+    # while the Anki desktop app is open.
+    anki_url: str = Field(default="http://127.0.0.1:8765", alias="BOWER_ANKI_URL")
     state_path: Path = Field(
         default=REPO_ROOT / "data" / "state.json", alias="BOWER_STATE_PATH"
     )
@@ -254,6 +287,12 @@ class Config(BaseSettings):
         hard-deleted; `bb prune` GCs it after the TTL). Since #25 the source
         node inlines the body — archive/ carries no unique knowledge."""
         return self.vault_path / "archive"
+
+    @property
+    def recall_map_path(self) -> Path:
+        """Anki review state rolled up by concept, rebuilt whole by `bb anki
+        harvest`. Bot-owned and derived, like `_index.md` — never human prose."""
+        return self.vault_path / "digests" / "recall-map.md"
 
     @property
     def review_path(self) -> Path:

@@ -13,6 +13,9 @@ _CATEGORY_RE = re.compile(r"^category:\s*(.+)$", re.MULTILINE)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _LINKS_SECTION_RE = re.compile(r"^## Links\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 _INDEX_LINE_RE = re.compile(r"^- \[\[([^\]]+)\]\](?: · ([^·\n]*))?", re.MULTILINE)
+_CONCEPT_BLOCK_RE = re.compile(
+    r"<!-- bower:concept.*? -->(.*?)<!-- /bower:concept -->", re.DOTALL
+)
 
 
 def read_text(path: Path) -> str:
@@ -72,6 +75,30 @@ def index_categories(index_text: str) -> dict[str, str]:
     }
 
 
+def inbound_source_counts(config: Config) -> dict[str, int]:
+    """Concept stem -> count of distinct `brain/sources/*.md` notes that
+    wikilink to it. More reliable than a concept note's own `## Sources`
+    heading, which can drift (list tools/people alongside real sources)."""
+    counts: dict[str, int] = {}
+    if not config.sources_dir.is_dir():
+        return counts
+    for path in config.sources_dir.glob("*.md"):
+        for target in set(outbound_links(read_text(path))):
+            counts[target] = counts.get(target, 0) + 1
+    return counts
+
+
+def concept_block_links(text: str) -> set[str]:
+    """Distinct `[[wikilinks]]` cited *inside* a `<!-- bower:concept -->`
+    block. Empty set if there's no block, or the block cites nothing."""
+    m = _CONCEPT_BLOCK_RE.search(text)
+    return set(outbound_links(m.group(1))) if m else set()
+
+
+def has_concept_block(text: str) -> bool:
+    return "<!-- bower:concept" in text
+
+
 class LintFindings(BaseModel):
     """Findings from a lint pass, one entry per finding."""
 
@@ -80,6 +107,8 @@ class LintFindings(BaseModel):
     broken_links: list[str] = Field(default_factory=list)
     topic_drift: list[str] = Field(default_factory=list)
     category_drift: list[str] = Field(default_factory=list)
+    under_cited_synthesis: list[str] = Field(default_factory=list)
+    earned_unsynthesized: list[str] = Field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -89,6 +118,8 @@ class LintFindings(BaseModel):
             or self.broken_links
             or self.topic_drift
             or self.category_drift
+            or self.under_cited_synthesis
+            or self.earned_unsynthesized
         )
 
 
@@ -171,12 +202,38 @@ def run_lint(config: Config) -> tuple[LintFindings, int, int]:
                     f"_index.md category '{index_category}'"
                 )
 
+    # Synthesis checks (INVARIANTS.md:24-28): concept substance is earned
+    # synthesis, cited to the sources that earned it. Quiet on a concept with
+    # fewer than 2 feeding sources — it hasn't earned anything yet.
+    source_counts = inbound_source_counts(config)
+    under_cited: list[str] = []
+    earned_unsynth: list[str] = []
+    concept_files = config.notes_dir.rglob("*.md") if config.notes_dir.is_dir() else []
+    for path in concept_files:
+        feeding = source_counts.get(path.stem, 0)
+        if feeding < 2:
+            continue
+        text = read_text(path)
+        rel = path.relative_to(config.vault_path).as_posix()
+        if has_concept_block(text):
+            block_links = concept_block_links(text)
+            if len(block_links) < 2:
+                under_cited.append(
+                    f"{rel}: cites {len(block_links)} source(s) inside the block"
+                )
+        elif feeding >= 3:
+            earned_unsynth.append(
+                f"{rel}: {feeding} inbound sources, no synthesis block"
+            )
+
     findings = LintFindings(
         orphan_reviews=orphan_reviews,
         orphan_nodes=orphan_nodes,
         broken_links=broken_links,
         topic_drift=sorted(topic_drift),
         category_drift=sorted(category_drift),
+        under_cited_synthesis=sorted(under_cited),
+        earned_unsynthesized=sorted(earned_unsynth),
     )
     return findings, len(files), len(store._entries)
 
@@ -209,6 +266,16 @@ def print_findings(findings: LintFindings, node_count: int, review_count: int) -
     if findings.category_drift:
         print(f"\nCategory drift ({len(findings.category_drift)}):")
         for entry in findings.category_drift:
+            print(f"  - {entry}")
+
+    if findings.under_cited_synthesis:
+        print(f"\nUnder-cited synthesis ({len(findings.under_cited_synthesis)}):")
+        for entry in findings.under_cited_synthesis:
+            print(f"  - {entry}")
+
+    if findings.earned_unsynthesized:
+        print(f"\nEarned but unsynthesized ({len(findings.earned_unsynthesized)}):")
+        for entry in findings.earned_unsynthesized:
             print(f"  - {entry}")
 
     return 1

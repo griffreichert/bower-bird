@@ -21,6 +21,14 @@ if [ ! -d "$VAULT" ]; then
   exit 1
 fi
 
+# Bookkeeping half of weave (D5): index rebuild + concept filing. Zero LLM
+# calls, zero network — free to run before the model spends tokens on
+# judgment. bb lint's own findings (broken links, orphans) are printed, not
+# fixed — those still need a human call.
+echo "bb tidy: index rebuild + concept filing..."
+(cd "$REPO_ROOT" && uv run bb tidy --apply)
+echo
+
 cd "$VAULT"
 
 # Weave runs on the Max SUBSCRIPTION, not the API. A shell-exported

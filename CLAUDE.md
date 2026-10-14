@@ -83,6 +83,29 @@ ladder for key-idea extraction → `## Highlights`), `#dig` on a line (learn
 more → `## Dig deeper`), `> ? question` (my open question → `## Open
 questions`), and outbound `[text](url)` links (→ `## Further reading`).
 
+## Anki front end (`anki.py`)
+
+Anki is the review surface; the graph stays the source of truth. Transport is
+the AnkiConnect add-on over local HTTP (`Config.anki_url`), so both verbs need
+the desktop app open and are never crond.
+
+- **`bb anki push` (graph → deck):** one card per source key idea, written by
+  Haiku (`llm.write_cards`, one call per source). Identity is
+  `anki.claim_key` — a hash of the claim's verbatim text, stable because key
+  ideas are append-only. A harvested highlight appends a claim, so the next
+  push cards it. Concept links ride along as `bb::concept::<Title>` tags and
+  are re-pointed on every push (concepts are plastic).
+- **`bb anki harvest` (deck → graph):** the self-improving half. A red flag
+  rewrites the card every time and clears the flag; `LEECH_LAPSES` lapses
+  rewrites it once (`bb::reworked`). The claim is never touched — only the
+  generated question and short answer move. Then `digests/recall-map.md` is
+  rebuilt: review state rolled up through concept links, weakest first, plus
+  the claims that kept failing (weave fodder — the key idea is thin).
+- **Boundary:** one deck and one note type, both named `BowerBird`. Every
+  AnkiConnect query is scoped to that note type.
+- Anki's scheduler owns scheduling for cards. `peck` and `_review.json` are
+  untouched and independent.
+
 ## Invariants (must always hold)
 
 Load-bearing. Don't regress them. Full text:
@@ -91,7 +114,8 @@ Load-bearing. Don't regress them. Full text:
 - **Research profile only.** Never gets push or merge permissions — that
   belongs to the separate `coding` profile.
 - **Owns `BowerBird/`; touches nothing outside it.** Every runtime write lands
-  under the owned folder.
+  under the owned folder. One exception, amended 2026-10-03: the `BowerBird`
+  Anki deck and note type, which `bb anki` owns the same way.
 - **Additive-autonomous.** Inside `BowerBird/` it creates notes and asserts
   `[[links]]` without asking, but **never rewrites or deletes human-authored
   text** — only appends.
@@ -139,36 +163,6 @@ PDF lane's `paper_model` (Sonnet), because Haiku thins out on dense papers.
 
 ## Repo layout
 
-```
-src/bower_bird/
-  config.py    env + owned-folder (BowerBird/) paths + LLMSettings (frozen Config)
-  schema.py    pydantic data contracts (Lane/Parsed, PageMeta, TweetText,
-               ClippingPlan, EntityRef, QuizQuestion, JudgeVerdict, Review,
-               ReviewEntry)
-  state.py     telegram offset + url + clip-hash dedup (idempotency)
-  telegram.py  getUpdates pull + send receipt
-  router.py    lane classification (tool: / shelve / paste / no_link)
-  marks.py     reader marks pulled from a clip body (highlight/dig/question/links)
-  fetch.py     page metadata fetch (title/description/excerpt)
-  resolve.py   X/Twitter tweet text resolution via proxy chain
-  llm.py       Anthropic calls: describe_link, synthesize_clipping, peck's
-               generate_question/judge_answer (pydantic structured output)
-  ingest.py    vault-write boundary guard (assert_writable) + bits shared by
-               nodes.py/queues.py (safe_filename, yaml_scalar, format_tweet_body)
-  nodes.py     graph-node writes: source notes, leaf notes (people/tools),
-               [[links]], the _index.md catalog, the _log.md activity log
-  queues.py    flat-file shelf/queue appends: to-clip.md, tools.md, _inbox.md
-  inbox.py     clipper inbox scan: clip -> source node + links -> archive
-  app.py       pull orchestration (Telegram queue + clipper inbox)
-  review.py    spaced-rep ReviewStore + peck quiz loop (stateful; ShelfCensus
-               stays here too — its from_store() takes a ReviewStore)
-  lint.py      read-only structural graph lint (orphans, broken links)
-  __main__.py  `python -m bower_bird`
-tests/         router + ingest/inbox unit tests (pure logic, no network)
-scripts/       launchd install/uninstall, weave.sh, backfill_bodies, pilot_ingest
-notes/         symlink into the Obsidian vault — planning notes (gitignored)
-```
-
 The Tier-2 synthesis playbook lives at `BowerBird/CLAUDE.md` inside the vault
 (loaded by Claude Code when run there), not in this repo.
 
@@ -199,11 +193,9 @@ pydantic-principles) — don't restate them here. Local conventions:
 
 ## Dev workflow
 
-- **Env:** `uv` (Python ≥ 3.11, pinned 3.13). `uv sync` builds `.venv` and
-  installs deps + the `dev` group.
-- **Lint/format:** `uv run ruff check .` / `uv run ruff format .`.
 - **Hooks:** `uv run pre-commit install && uv run pre-commit install --hook-type
   commit-msg`. Local hooks run ruff (check `--fix`, format) and commitizen.
 - **Commits:** Conventional Commits, enforced by commitizen (`cz check` on
   commit-msg). Bump with `uv run cz bump`.
-- **Tests:** `uv run python tests/test_router.py`.
+- **Tests:** no pytest — each `tests/test_*.py` is a runnable assert script.
+  `for f in tests/test_*.py; do uv run python "$f" || break; done` (what CI does).
