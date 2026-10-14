@@ -4,7 +4,7 @@ Zero LLM calls, zero network — same class as `bb lint`, but this is the one
 piece here that writes. Three jobs, each independently useful:
 
   1. Rebuild `_index.md`'s `## Pages` section from what actually exists under
-     brain/ (sources/ + bowers/, recursively) — `nodes.upsert_index_line`
+     brain/ (sources/ + bowers/, recursively) — `catalog.upsert_index_line`
      maintains it incrementally per-capture and it drifts. Preserves each
      page's existing category + one-liner where a catalog line already names
      it; never invents one for a page that has none.
@@ -29,10 +29,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from bower_bird.catalog import read_index
 from bower_bird.config import Config
 from bower_bird.ingest import assert_writable
 from bower_bird.lint import links_section_targets, read_text, run_lint
-from bower_bird.nodes import read_index
 
 _PAGES_HEADING = "## Pages"
 _PAGE_LINE_RE = re.compile(r"^- \[\[([^\]]+)\]\](.*)$", re.MULTILINE)

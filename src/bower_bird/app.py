@@ -12,7 +12,7 @@ import sys
 import time
 from urllib.parse import urlparse
 
-from bower_bird import inbox, ingest, nodes, queues, telegram
+from bower_bird import catalog, inbox, ingest, nodes, queues, telegram
 from bower_bird.config import Config
 from bower_bird.fetch import (
     fetch,
@@ -46,7 +46,7 @@ def finish_shelve(
     """Synthesize + write a source node, then catalog/log/receipt. Shared tail
     for every shelve-lane path (plain fetch, PDF, tweet, pasted prose)."""
     query = f"{meta.title} {note} {meta.body_excerpt}"
-    candidates = nodes.candidate_index(config, config.llm, query)
+    candidates = catalog.candidate_index(config, config.llm, query)
     plan = synthesize_clipping(meta, note, candidates, model, config.llm)
     path = nodes.create_source_note(config, meta, plan, note=note, full_body=full_body)
     if meta.url:
@@ -55,10 +55,10 @@ def finish_shelve(
         return f"🔁 Already in brain — {truncate_title(plan.concise_title)}"
 
     nodes.file_entities(config, plan, path.stem)
-    nodes.upsert_index_line(config, path.stem, plan.category, plan.description)
+    catalog.upsert_index_line(config, path.stem, plan.category, plan.description)
     for topic in plan.topics:
-        nodes.upsert_index_line(config, topic, plan.category, "", insert_only=True)
-    nodes.append_log(
+        catalog.upsert_index_line(config, topic, plan.category, "", insert_only=True)
+    catalog.append_log(
         config, f"build sources/{path.name} [{plan.category or 'uncategorized'}]"
     )
 

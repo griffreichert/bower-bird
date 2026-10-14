@@ -11,15 +11,15 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import bower_bird.llm as llm
+import bower_bird.peck as peck
 import bower_bird.review as review
 from bower_bird.config import Config
+from bower_bird.peck import judge_review, read_grade
 from bower_bird.review import (
     BAD_STREAK_FLAG,
     LEITNER_LADDER,
     ReviewStore,
     ShelfCensus,
-    judge_review,
-    read_grade,
     scan_sources,
 )
 from bower_bird.schema import Review
@@ -546,11 +546,11 @@ def test_grade_cli_bad_and_retire_letters() -> None:
         store.seed("abc")
         store.save()
 
-        review.grade(cfg, "abc", "b")
+        peck.grade(cfg, "abc", "b")
         r = ReviewStore.load(cfg).get("abc")
         check(r.bad_streak == 1, "grade CLI 'b' marks bad")  # type: ignore[union-attr]
 
-        review.grade(cfg, "abc", "d")
+        peck.grade(cfg, "abc", "d")
         r = ReviewStore.load(cfg).get("abc")
         check(r.retired is True, "grade CLI 'd' retires")  # type: ignore[union-attr]
 
@@ -597,7 +597,7 @@ def test_shelf_census_buckets() -> None:
 
 def _queue_prompts(answers: list[str]) -> None:
     it = iter(answers)
-    review.prompt_user = lambda msg: next(it)  # type: ignore[assignment]
+    peck.prompt_user = lambda msg: next(it)  # type: ignore[assignment]
 
 
 def test_read_grade_enter_accepts_judge_default() -> None:
@@ -617,9 +617,9 @@ def test_read_grade_no_default_requires_explicit() -> None:
 
 def test_read_action_recognises_bad_and_retire() -> None:
     _queue_prompts(["b"])
-    check(review.read_action(None) == "bad", "'b' → bad")
+    check(peck.read_action(None) == "bad", "'b' → bad")
     _queue_prompts(["d"])
-    check(review.read_action(None) == "retire", "'d' → retire")
+    check(peck.read_action(None) == "retire", "'d' → retire")
 
 
 def testjudge_review_returns_grade_from_verdict() -> None:
@@ -666,7 +666,7 @@ def test_generate_question_failure_falls_back_to_none() -> None:
             cfg = _config(Path(d))
             node = review.SourceNode(id="x", title="X", key_ideas=["a"])
             check(
-                review.question_for_node(cfg, node, 0) is None,
+                peck.question_for_node(cfg, node, 0) is None,
                 "question generator error → None (self-quiz fallback)",
             )
     finally:

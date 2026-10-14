@@ -71,7 +71,7 @@ def parse_note(text: str) -> ParsedNote | None:
 
 
 def parse_index_categories(index_text: str) -> dict[str, str]:
-    """title -> category, from `_index.md` lines (`nodes.upsert_index_line`
+    """title -> category, from `_index.md` lines (`catalog.upsert_index_line`
     format: `- [[title]] · category · oneline`)."""
     cats: dict[str, str] = {}
     for line in index_text.splitlines():

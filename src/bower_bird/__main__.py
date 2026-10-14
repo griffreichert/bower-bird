@@ -66,7 +66,7 @@ def main() -> int:
         config = config_or_exit()
         if isinstance(config, int):
             return config
-        from bower_bird.review import main as peck_main
+        from bower_bird.peck import main as peck_main
 
         return peck_main(config, args[1:])
 

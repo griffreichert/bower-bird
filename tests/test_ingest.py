@@ -6,7 +6,7 @@ Run: uv run python tests/test_ingest.py
 import tempfile
 from pathlib import Path
 
-from bower_bird import app, inbox, ingest, nodes, queues
+from bower_bird import app, catalog, inbox, ingest, nodes, queues
 from bower_bird.config import Config
 from bower_bird.fetch import needs_clipping
 from bower_bird.marks import Marks, extract_marks, extract_urls, pick_source_url
@@ -485,7 +485,7 @@ def test_index_upsert_add_update_idempotent() -> None:
         root.mkdir()
         cfg = _config(root)
 
-        nodes.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
+        catalog.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
         text = cfg.index_path.read_text(encoding="utf-8")
         check(
             "- [[Agentic loops]] · ai · how agents iterate" in text,
@@ -493,14 +493,14 @@ def test_index_upsert_add_update_idempotent() -> None:
         )
 
         # Second identical call is a no-op (no duplicate line).
-        nodes.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
+        catalog.upsert_index_line(cfg, "Agentic loops", "ai", "how agents iterate")
         text = cfg.index_path.read_text(encoding="utf-8")
         check(
             text.count("[[Agentic loops]]") == 1, "identical upsert does not duplicate"
         )
 
         # Changing the payload replaces the line in place (still one line).
-        nodes.upsert_index_line(
+        catalog.upsert_index_line(
             cfg, "Agentic loops", "ai", "the agent iterate-verify loop"
         )
         text = cfg.index_path.read_text(encoding="utf-8")
@@ -509,7 +509,7 @@ def test_index_upsert_add_update_idempotent() -> None:
         check("how agents iterate" not in text, "old one-liner gone")
 
         # A title that is a prefix of an existing one is not clobbered.
-        nodes.upsert_index_line(cfg, "Agentic", "ai", "distinct shorter title")
+        catalog.upsert_index_line(cfg, "Agentic", "ai", "distinct shorter title")
         text = cfg.index_path.read_text(encoding="utf-8")
         check(text.count("[[Agentic loops]]") == 1, "prefix title left intact")
         check(
@@ -518,12 +518,12 @@ def test_index_upsert_add_update_idempotent() -> None:
         )
 
         # Empty category/one-liner degrades gracefully (no trailing separators).
-        nodes.upsert_index_line(cfg, "Bare", "", "")
+        catalog.upsert_index_line(cfg, "Bare", "", "")
         text = cfg.index_path.read_text(encoding="utf-8")
         check("- [[Bare]]\n" in text, "empty fields yield a clean bare line")
 
         # insert_only: never clobbers an existing (richer) line...
-        nodes.upsert_index_line(
+        catalog.upsert_index_line(
             cfg, "Agentic loops", "xx", "thin stub", insert_only=True
         )
         text = cfg.index_path.read_text(encoding="utf-8")
@@ -532,7 +532,9 @@ def test_index_upsert_add_update_idempotent() -> None:
             "insert_only leaves the existing richer line untouched",
         )
         # ...but does add a line when the title is absent.
-        nodes.upsert_index_line(cfg, "Brand New", "ai", "fresh stub", insert_only=True)
+        catalog.upsert_index_line(
+            cfg, "Brand New", "ai", "fresh stub", insert_only=True
+        )
         text = cfg.index_path.read_text(encoding="utf-8")
         check(
             "[[Brand New]] · ai · fresh stub" in text, "insert_only adds absent title"
@@ -544,8 +546,8 @@ def test_append_log() -> None:
         root = Path(d) / "BowerBird"
         root.mkdir()
         cfg = _config(root)
-        nodes.append_log(cfg, "built 2 pages")
-        nodes.append_log(cfg, "built 1 page")
+        catalog.append_log(cfg, "built 2 pages")
+        catalog.append_log(cfg, "built 1 page")
         text = cfg.log_path.read_text(encoding="utf-8")
         check(
             "built 2 pages" in text and "built 1 page" in text, "both log lines present"

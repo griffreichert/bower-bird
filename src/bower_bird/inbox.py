@@ -18,7 +18,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from bower_bird import ingest, nodes
+from bower_bird import catalog, ingest, nodes
 from bower_bird.config import Config
 from bower_bird.llm import synthesize_clipping
 from bower_bird.marks import (
@@ -104,7 +104,7 @@ def file_clip(
     clean = strip_directives(body)
     meta = meta.model_copy(update={"body_excerpt": clean[:_BODY_LIMIT]})
     query = f"{meta.title} {meta.body_excerpt}"
-    candidates = nodes.candidate_index(config, config.llm, query)
+    candidates = catalog.candidate_index(config, config.llm, query)
     plan = synthesize_clipping(
         meta,
         "",
@@ -135,10 +135,12 @@ def file_clip(
     # concept has a stub line (insert-only — never clobber weave's richer
     # text). Log the build. Only for a freshly written source note.
     if note_path is not None:
-        nodes.upsert_index_line(config, source_title, plan.category, plan.description)
+        catalog.upsert_index_line(config, source_title, plan.category, plan.description)
         for topic in plan.topics:
-            nodes.upsert_index_line(config, topic, plan.category, "", insert_only=True)
-        nodes.append_log(
+            catalog.upsert_index_line(
+                config, topic, plan.category, "", insert_only=True
+            )
+        catalog.append_log(
             config,
             f"build sources/{note_path.name} "
             f"[{plan.category or 'uncategorized'}] "

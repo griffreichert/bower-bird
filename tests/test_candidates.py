@@ -1,4 +1,4 @@
-"""Tests for `nodes.candidate_index` — relevance-first, popularity-backed
+"""Tests for `catalog.candidate_index` — relevance-first, popularity-backed
 candidate selection (see config.LLMSettings.topic_relevance_limit).
 
 Run: uv run python tests/test_candidates.py
@@ -8,8 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from bower_bird.catalog import candidate_index, inbound_link_counts
 from bower_bird.config import Config, LLMSettings
-from bower_bird.nodes import candidate_index, inbound_link_counts
 
 _failures = 0
 
