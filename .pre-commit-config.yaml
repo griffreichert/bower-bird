@@ -19,6 +19,12 @@ repos:
         types_or: [python, pyi]
         require_serial: true
 
+      - id: lint-source
+        name: lint-source
+        entry: uv run lint-source
+        language: system
+        files: ^src/bower_bird/.*\.py$
+
       - id: commitizen
         name: commitizen check
         entry: uv run cz check --commit-msg-file

@@ -23,6 +23,7 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
+          uv run lint-source
 
       - name: Tests
         run: |

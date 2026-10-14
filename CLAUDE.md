@@ -194,7 +194,13 @@ pydantic-principles) — don't restate them here. Local conventions:
 ## Dev workflow
 
 - **Hooks:** `uv run pre-commit install && uv run pre-commit install --hook-type
-  commit-msg`. Local hooks run ruff (check `--fix`, format) and commitizen.
+  commit-msg`. Local hooks run ruff (check `--fix`, format), `lint-source`
+  and commitizen.
+- **Lint:** ruff enforces NumPy docstrings (tests exempt) and bans
+  dataclasses and `from __future__ import annotations`. `uv run lint-source`
+  checks `src/bower_bird/`: no module docstrings, no `noqa`, no issue numbers
+  or dates in comments or docstrings, no comment blocks of 3+ lines, no
+  rationale in comments (it belongs in the docstring), files under 400 lines.
 - **Commits:** Conventional Commits, enforced by commitizen (`cz check` on
   commit-msg). Bump with `uv run cz bump`.
 - **Tests:** no pytest — each `tests/test_*.py` is a runnable assert script.

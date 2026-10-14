@@ -19,6 +19,7 @@ bower_bird = "bower_bird.__main__:main"
 bb = "bower_bird.__main__:main"
 pull = "bower_bird.__main__:pull"
 build = "bower_bird.__main__:build"
+lint-source = "bower_bird.lint_source:main"
 
 [dependency-groups]
 dev = [
@@ -34,7 +35,18 @@ line-length = 88
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B", "G", "LOG", "TID251"]
+select = ["E", "F", "I", "W", "UP", "B", "D", "G", "LOG", "TID251"]
+ignore = [
+    "D100", # Modules stay without docstrings.
+    "D104", # Packages stay without docstrings.
+    "E501", # The formatter owns line length.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "__future__.annotations".msg = "Use runtime annotations directly."
