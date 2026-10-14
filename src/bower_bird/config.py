@@ -17,7 +17,7 @@ bowers/, people/, tools/), archive/, to-clip.md, tools.md, _inbox.md, digests/.
 
 import os
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,14 +39,14 @@ class LLMSettings(BaseModel):
     extracting from 40 dense pages; every other lane stays cheap and
     always-on.
 
-    Haiku 4.5 does not take `thinking`/`effort` params — omit them. Small caps:
-    these are one-liners and short JSON, not essays.
+    Haiku 5.5 thinks by default and the thinking counts toward `max_tokens`,
+    so the Haiku calls pass `effort` (low) and every cap leaves room for it.
     """
 
     model_config = ConfigDict(frozen=True)
 
     model: str = Field(
-        default="claude-haiku-4-5",
+        default="claude-haiku-5-5",
         description="Tier-1 model: link identification + synthesize_clipping "
         "for every lane except the PDF lane.",
     )
@@ -56,8 +56,16 @@ class LLMSettings(BaseModel):
         "long dense PDFs (papers, reports); Sonnet handles the long-context "
         "extraction. Used ONLY for the bare-PDF-link lane.",
     )
+    effort: Literal["low", "medium", "high"] = Field(
+        default="low",
+        description="`output_config.effort` for every `model` call. Haiku 5.5 "
+        "defaults to medium; low keeps thinking short on one-liners and short "
+        "JSON. The PDF lane's `paper_model` keeps its own default.",
+    )
     describe_max_tokens: int = Field(
-        default=120, gt=0, description="Cap for describe_link's one-line output."
+        default=1024,
+        gt=0,
+        description="Cap for describe_link: thinking plus a one-line output.",
     )
     clipping_max_tokens: int = Field(
         default=1600,
@@ -66,10 +74,14 @@ class LLMSettings(BaseModel):
         "detailed key-idea claims (mechanism/numbers, not headlines).",
     )
     judge_max_tokens: int = Field(
-        default=300, gt=0, description="Cap for judge_answer's verdict + rationale."
+        default=1024,
+        gt=0,
+        description="Cap for judge_answer: thinking plus verdict and rationale.",
     )
     question_max_tokens: int = Field(
-        default=200, gt=0, description="Cap for generate_question's quiz question."
+        default=1024,
+        gt=0,
+        description="Cap for generate_question: thinking plus the question.",
     )
 
 

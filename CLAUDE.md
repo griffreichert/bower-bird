@@ -125,7 +125,7 @@ points at the project's *planning* notes, a different folder from the runtime
 Synthesis is split by cost shape (decided 2026-06-24):
 
 - **Tier 1 — per-item (this Python app):** first-party **Anthropic API**,
-  **`claude-haiku-4-5`**. The cron pull reading inbox/Telegram and writing
+  **`claude-haiku-5-5`**. The cron pull reading inbox/Telegram and writing
   baseline `sources/` notes + links. Cheap, automatable. Structured output uses
   `messages.parse` with a pydantic model (`llm.ClippingPlan`).
 - **Tier 2 — whole-graph (Claude Code, not this app):** the deep `weave` pass —

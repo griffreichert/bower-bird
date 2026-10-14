@@ -16,6 +16,7 @@ model.
 """
 
 import anthropic
+from anthropic import omit
 
 from bower_bird.config import LLMSettings
 from bower_bird.schema import ClippingPlan, JudgeVerdict, PageMeta, QuizQuestion
@@ -71,6 +72,7 @@ def generate_question(
     response = anthropic_client().messages.parse(
         model=llm.model,
         max_tokens=llm.question_max_tokens,
+        output_config={"effort": llm.effort},
         messages=[{"role": "user", "content": prompt}],
         output_format=QuizQuestion,
     )
@@ -115,6 +117,7 @@ def judge_answer(
     response = anthropic_client().messages.parse(
         model=llm.model,
         max_tokens=llm.judge_max_tokens,
+        output_config={"effort": llm.effort},
         messages=[{"role": "user", "content": prompt}],
         output_format=JudgeVerdict,
     )
@@ -153,6 +156,7 @@ def describe_link(meta: PageMeta, llm: LLMSettings) -> str:
     msg = anthropic_client().messages.create(
         model=llm.model,
         max_tokens=llm.describe_max_tokens,
+        output_config={"effort": llm.effort},
         messages=[{"role": "user", "content": prompt}],
     )
     line = first_text(msg).strip().strip('"')
@@ -247,9 +251,12 @@ def synthesize_clipping(
         f"{candidates}\n\n"
         f"Source excerpt (context only):\n{meta.body_excerpt[:3000]}"
     )
+    # Only the Haiku lane takes llm.effort; the PDF lane's Sonnet keeps its default.
+    effort = {"effort": llm.effort} if model == llm.model else omit
     response = anthropic_client().messages.parse(
         model=model,
         max_tokens=llm.clipping_max_tokens,
+        output_config=effort,
         messages=[{"role": "user", "content": prompt}],
         output_format=ClippingPlan,
     )
