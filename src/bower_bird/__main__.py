@@ -14,6 +14,8 @@ Subcommands (also exposed as their own `uv run <verb>` scripts):
   ask              Ranked claim recall over the graph (read-only, no LLM).
   touch            Pull review due-dates to today for harvested nodes (weave's
                     hook, #29).
+  anki             Anki front end: push claims to the deck as cards, harvest
+                    review signals back (needs Anki open with AnkiConnect).
 """
 
 import sys
@@ -142,6 +144,14 @@ def main() -> int:
         count = touch(store, ids)
         print(f"bb touch: pulled {count} node(s) due to today.")
         return 0
+
+    if subcommand == "anki":
+        config = config_or_exit()
+        if isinstance(config, int):
+            return config
+        from bower_bird.anki import main as anki_main
+
+        return anki_main(config, args[1:])
 
     if subcommand == "drain":
         from bower_bird.app import run_drain

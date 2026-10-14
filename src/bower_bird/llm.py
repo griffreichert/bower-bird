@@ -18,7 +18,14 @@ model.
 import anthropic
 
 from bower_bird.config import LLMSettings
-from bower_bird.schema import ClippingPlan, JudgeVerdict, PageMeta, QuizQuestion
+from bower_bird.schema import (
+    CardDraft,
+    CardPlan,
+    ClippingPlan,
+    JudgeVerdict,
+    PageMeta,
+    QuizQuestion,
+)
 
 
 def key_ideas_block(key_ideas: list[str], seed: str) -> str:
@@ -125,6 +132,68 @@ def judge_answer(
             rationale="(judge returned nothing — graded weak; override if wrong.)",
         )
     return verdict
+
+
+CARD_RULES = (
+    "- The question is shown with no other context, so name its subject. Never "
+    "say 'the article', 'the author' or 'this source'.\n"
+    "- Ask for one thing. Prefer why / how / what-happens-when over yes/no and "
+    "over 'list the N things'.\n"
+    "- The answer is at most 30 words and drawn ONLY from the claim — never "
+    "add a fact from outside it. The full claim is shown under your answer, so "
+    "do not restate all of it."
+)
+
+
+def write_cards(title: str, claims: list[str], llm: LLMSettings) -> CardPlan | None:
+    """Write one Anki card per claim for a single source (Haiku).
+
+    Grounded ONLY on the claims — the distilled key ideas already on the node.
+    Returns None on a refusal; the caller must check the plan holds exactly
+    one card per claim before using it.
+    """
+    numbered = "\n".join(f"{i}. {claim}" for i, claim in enumerate(claims, 1))
+    prompt = (
+        "You are writing spaced-repetition flashcards for a learner's own "
+        "knowledge vault. Write exactly ONE card per claim below, in the same "
+        "order.\n\n"
+        f"{CARD_RULES}\n\n"
+        f"Source title (context only): {title}\n\n"
+        f"Claims:\n{numbered}"
+    )
+    response = anthropic_client().messages.parse(
+        model=llm.model,
+        max_tokens=llm.card_max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=CardPlan,
+    )
+    return response.parsed_output
+
+
+def rewrite_card(
+    claim: str, front: str, back: str, problem: str, llm: LLMSettings
+) -> CardDraft | None:
+    """Replace a card that review showed is not working (Haiku).
+
+    `problem` is one sentence saying what went wrong and what to change. The
+    claim stays the ground truth; only the question and short answer move.
+    Returns None on a refusal.
+    """
+    prompt = (
+        "You are fixing a spaced-repetition flashcard in a learner's own "
+        f"knowledge vault. {problem}\n\n"
+        f"{CARD_RULES}\n\n"
+        f"Claim (ground truth): {claim}\n"
+        f"Current question: {front}\n"
+        f"Current answer: {back}"
+    )
+    response = anthropic_client().messages.parse(
+        model=llm.model,
+        max_tokens=llm.question_max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=CardDraft,
+    )
+    return response.parsed_output
 
 
 def anthropic_client() -> anthropic.Anthropic:

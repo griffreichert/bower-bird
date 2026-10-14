@@ -71,6 +71,12 @@ class LLMSettings(BaseModel):
     question_max_tokens: int = Field(
         default=200, gt=0, description="Cap for generate_question's quiz question."
     )
+    card_max_tokens: int = Field(
+        default=1600,
+        gt=0,
+        description="Cap for write_cards' plan — one question + short answer "
+        "per claim, for every claim on a source.",
+    )
     topic_relevance_limit: int = Field(
         default=40,
         gt=0,
@@ -133,6 +139,9 @@ class Config(BaseSettings):
     vault_path: Path = Field(
         default=None, alias="BOWER_VAULT_PATH", validate_default=True
     )
+    # AnkiConnect's local HTTP endpoint (add-on 2055492159). Only reachable
+    # while the Anki desktop app is open.
+    anki_url: str = Field(default="http://127.0.0.1:8765", alias="BOWER_ANKI_URL")
     state_path: Path = Field(
         default=REPO_ROOT / "data" / "state.json", alias="BOWER_STATE_PATH"
     )
@@ -266,6 +275,12 @@ class Config(BaseSettings):
         hard-deleted; `bb prune` GCs it after the TTL). Since #25 the source
         node inlines the body — archive/ carries no unique knowledge."""
         return self.vault_path / "archive"
+
+    @property
+    def recall_map_path(self) -> Path:
+        """Anki review state rolled up by concept, rebuilt whole by `bb anki
+        harvest`. Bot-owned and derived, like `_index.md` — never human prose."""
+        return self.vault_path / "digests" / "recall-map.md"
 
     @property
     def review_path(self) -> Path:

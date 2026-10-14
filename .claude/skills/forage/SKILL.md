@@ -42,7 +42,9 @@ uv run python -c 'from bower_bird.config import Config; print(Config().vault_pat
 
 All paths below are relative to that. Pull from four sources:
 
-1. **Weak recall.** Read `_review.json` — bowers whose most recent grade is
+1. **Weak recall.** Read `digests/recall-map.md` when it exists — the top
+   rows are the weakest concepts in Anki review, and `## Hard claims` lists
+   claims that kept failing. Also read `_review.json` — bowers whose most recent grade is
    `wrong` or `weak`, plus any bad-question/idk flags.
 2. **`#dig` marks.** Grep `brain/` for lines tagged `#dig` — threads the reader
    flagged to learn more about.

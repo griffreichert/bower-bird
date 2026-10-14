@@ -83,6 +83,29 @@ ladder for key-idea extraction → `## Highlights`), `#dig` on a line (learn
 more → `## Dig deeper`), `> ? question` (my open question → `## Open
 questions`), and outbound `[text](url)` links (→ `## Further reading`).
 
+## Anki front end (`anki.py`)
+
+Anki is the review surface; the graph stays the source of truth. Transport is
+the AnkiConnect add-on over local HTTP (`Config.anki_url`), so both verbs need
+the desktop app open and are never crond.
+
+- **`bb anki push` (graph → deck):** one card per source key idea, written by
+  Haiku (`llm.write_cards`, one call per source). Identity is
+  `anki.claim_key` — a hash of the claim's verbatim text, stable because key
+  ideas are append-only. A harvested highlight appends a claim, so the next
+  push cards it. Concept links ride along as `bb::concept::<Title>` tags and
+  are re-pointed on every push (concepts are plastic).
+- **`bb anki harvest` (deck → graph):** the self-improving half. A red flag
+  rewrites the card every time and clears the flag; `LEECH_LAPSES` lapses
+  rewrites it once (`bb::reworked`). The claim is never touched — only the
+  generated question and short answer move. Then `digests/recall-map.md` is
+  rebuilt: review state rolled up through concept links, weakest first, plus
+  the claims that kept failing (weave fodder — the key idea is thin).
+- **Boundary:** one deck and one note type, both named `BowerBird`. Every
+  AnkiConnect query is scoped to that note type.
+- Anki's scheduler owns scheduling for cards. `peck` and `_review.json` are
+  untouched and independent.
+
 ## Invariants (must always hold)
 
 Load-bearing. Don't regress them. Full text:
@@ -91,7 +114,8 @@ Load-bearing. Don't regress them. Full text:
 - **Research profile only.** Never gets push or merge permissions — that
   belongs to the separate `coding` profile.
 - **Owns `BowerBird/`; touches nothing outside it.** Every runtime write lands
-  under the owned folder.
+  under the owned folder. One exception, amended 2026-10-03: the `BowerBird`
+  Anki deck and note type, which `bb anki` owns the same way.
 - **Additive-autonomous.** Inside `BowerBird/` it creates notes and asserts
   `[[links]]` without asking, but **never rewrites or deletes human-authored
   text** — only appends.
