@@ -174,12 +174,12 @@ Requires [uv](https://docs.astral.sh/uv/) and Python ≥ 3.11.
 
 ```bash
 uv sync                       # create .venv, install deps
-cp .env.example .env          # fill in TELEGRAM_BOT_TOKEN + ANTHROPIC_API_KEY
+cp .env.example .env          # fill in TELEGRAM_BOT_TOKEN + BOWER_BIRD_ANTHROPIC_API_KEY
 uv run python -m bower_bird    # pull the queue once
 ```
 
 `TELEGRAM_BOT_TOKEN` comes from [@BotFather](https://t.me/BotFather);
-`ANTHROPIC_API_KEY` from the [Anthropic Console](https://console.anthropic.com/).
+`BOWER_BIRD_ANTHROPIC_API_KEY` from the [Anthropic Console](https://console.anthropic.com/).
 The vault path auto-resolves from the `notes/` symlink, or set
 `BOWER_VAULT_PATH`. See `.env.example` for all options.
 

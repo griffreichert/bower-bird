@@ -8,7 +8,7 @@ Config is constructed with vault_path=<scratch>, and ingest.assert_writable
 holds the boundary as usual).
 
 Manual, y/N-gated, never crond. Makes real fetches + real LLM calls (that's
-the point — you're grading the prompt), so ANTHROPIC_API_KEY must be set.
+the point — you're grading the prompt), so BOWER_BIRD_ANTHROPIC_API_KEY must be set.
 
 Usage:
     uv run python scripts/pilot_ingest.py <sends.txt> [scratch_dir]

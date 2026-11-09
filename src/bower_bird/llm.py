@@ -1,7 +1,7 @@
 import anthropic
 from anthropic import omit
 
-from bower_bird.config import LLMSettings
+from bower_bird.config import Config, LLMSettings
 from bower_bird.schema import (
     CardDraft,
     CardPlan,
@@ -189,8 +189,8 @@ def rewrite_card(
 
 
 def anthropic_client() -> anthropic.Anthropic:
-    """Return a client that reads ANTHROPIC_API_KEY from the environment."""
-    return anthropic.Anthropic()
+    """Return a client keyed with bower-bird's own key from Config."""
+    return anthropic.Anthropic(api_key=Config().anthropic_api_key.get_secret_value())
 
 
 def first_text(message) -> str:
