@@ -39,7 +39,7 @@ Per doc:
      reuses inbox.py's archive-move seam (collision-safe rename included).
 
 Manual, y/N-gated before any real-vault write — same contract as
-pilot_ingest.py. Makes real fetches + real LLM calls, so ANTHROPIC_API_KEY
+pilot_ingest.py. Makes real fetches + real LLM calls, so BOWER_BIRD_ANTHROPIC_API_KEY
 must be set for a real (non-dry) run.
 
 Usage:

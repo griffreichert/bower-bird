@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -101,8 +100,9 @@ class LLMSettings(BaseModel):
 class Config(BaseSettings):
     """Runtime config — secrets/paths/tunables from the environment (or .env).
 
-    ANTHROPIC_API_KEY rides along from .env for launchd runs (see
-    model_post_init).
+    The Anthropic key lives under BOWER_BIRD_ANTHROPIC_API_KEY and is handed
+    to the SDK client directly, so it never becomes the ANTHROPIC_API_KEY
+    default that Claude Code and other tools read.
     """
 
     model_config = SettingsConfigDict(
@@ -120,9 +120,9 @@ class Config(BaseSettings):
     telegram_bot_token: SecretStr = Field(alias="TELEGRAM_BOT_TOKEN")
     anthropic_api_key: SecretStr = Field(
         default=SecretStr(""),
-        alias="ANTHROPIC_API_KEY",
-        description="Loaded from .env and exported in model_post_init, since a "
-        "launchd job does not inherit the shell environment the SDK reads.",
+        alias="BOWER_BIRD_ANTHROPIC_API_KEY",
+        description="Passed to the SDK client in llm.anthropic_client, never "
+        "exported to the environment.",
     )
     allowed_chat_ids: set[int] = Field(
         default_factory=set,
@@ -299,13 +299,3 @@ class Config(BaseSettings):
         repo-side state.json (which is idempotency-only).
         """
         return self.vault_path / "_review.json"
-
-    def model_post_init(self, __context: object) -> None:
-        """Export ANTHROPIC_API_KEY into the environment when it is unset.
-
-        launchd jobs do not inherit the shell's exports, and the Anthropic SDK
-        only reads the environment.
-        """
-        key = self.anthropic_api_key.get_secret_value()
-        if key:
-            os.environ.setdefault("ANTHROPIC_API_KEY", key)

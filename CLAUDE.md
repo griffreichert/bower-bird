@@ -179,8 +179,7 @@ pydantic-principles) — don't restate them here. Local conventions:
   module; so does a model whose methods would pull a package import into
   `schema.py` and create a cycle (e.g. `ShelfCensus`, bound to `ReviewStore`).
 - **`Config()` is the loader.** No wrapper loaders — validation and env
-  handling (e.g. the ANTHROPIC_API_KEY launchd export) live inside the class
-  via field validators and `model_post_init`.
+  handling live inside the class via field validators and `model_post_init`.
 - **LLM tunables live on `LLMSettings`** in `config.py`: model names (incl.
   per-lane overrides like the PDF lane's Sonnet) and per-call max-token caps.
   No scattered module-level `_MAX_*` constants.
