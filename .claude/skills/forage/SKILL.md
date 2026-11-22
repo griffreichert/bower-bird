@@ -6,7 +6,7 @@ description: Hunt the open web for what to read next — turns gap signals (weak
 # forage
 
 The **outward** verb of the graph — the sibling that goes past the vault's edge.
-`peck` tests what's held, `fetch` and `recap` query what's already there; `forage`
+`peck` tests what's held, `bb-fetch` and `recap` query what's already there; `forage`
 is the only one that leaves and comes back with something new. Gap signals (or a
 named topic) become search queries; you hunt the live web and propose reads.
 
@@ -81,6 +81,6 @@ bot to shelve it.**
 ## Not this skill
 
 - **Quiz me on what I know** → `peck`.
-- **What do I already know about a topic** → `fetch`.
+- **What do I already know about a topic** → `bb-fetch`.
 - **What's new in the graph recently** → `recap`.
 - **Synthesize + write a dated digest into the vault** → `weave`.

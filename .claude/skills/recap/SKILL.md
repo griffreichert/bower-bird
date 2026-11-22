@@ -5,7 +5,7 @@ description: Recap what's new in the vault over a time window — a read-only ru
 
 # recap
 
-The **time query** of the graph — the temporal sibling of `fetch` (which queries
+The **time query** of the graph — the temporal sibling of `bb-fetch` (which queries
 by topic). **Takes no direction and no context from the user** — it decides its
 own window and reports what landed recently. Zero-input by design: the user runs
 `recap`, you catch them up.
@@ -65,14 +65,14 @@ arrivals** (the two-streams rule):
   waiting. **Pointers only — never distill an unread item.**
 
 Optionally close with a one-line **threads** note: a topic or two the new
-knowledge clusters around, to hand to `fetch` ("`fetch <topic>` to pull the
+knowledge clusters around, to hand to `bb-fetch` ("`bb-fetch <topic>` to pull the
 full picture") or `forage` ("gaps here").
 
 If nothing landed in the window, say so in one line.
 
 ## Not this skill
 
-- **What do I know about a specific topic** → `fetch`.
+- **What do I know about a specific topic** → `bb-fetch`.
 - **Synthesize + write a dated digest into the vault** → `weave` (it writes;
   recap never does).
 - **What should I read next / gaps** → `forage`.

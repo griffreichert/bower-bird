@@ -146,6 +146,9 @@ sources into `bowers/`).
   and passes score along `[[links]]`, grouping sources under the concept that
   connects them. With no query it lists notes; `--author`, `--since` and `--type` filter both. `sql` runs
   read only queries; with no argument it prints the schema.
+- **`/bb-fetch`** (agent skill, `skills/bb-fetch/`) — read only vault search
+  and briefing from any repo, wrapping `bb ask` and `bb sql`. dot-g links it into
+  `~/.claude/skills` and `~/.agents/skills` for Claude Code and Codex.
 - **`/forage`** (Claude Code skill) — outward web hunt from a gap signal or
   topic; proposes reads, never writes to the vault.
 - **`weave`** (Tier-2, `make weave`) — the deep, subscription-side pass:
