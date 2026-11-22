@@ -179,7 +179,9 @@ def test_media_only_tweet_queues_to_clip() -> None:
         check(seeds == [], "no LLM call for a media-only tweet")
         clip = (root / "to-clip.md").read_text(encoding="utf-8")
         check(tweet.url in clip, "canonical tweet url queued to clip")
-        check(state.seen_url("https://x.com/someone/status/5"), "origin url marked")
+        origin = "https://x.com/someone/status/5"
+        check(state.seen_queued_url(origin), "origin url queued")
+        check(not state.seen_url(origin), "queued url not marked shelved")
 
 
 def test_bare_quote_tweet_still_shelves_as_a_tweet() -> None:
