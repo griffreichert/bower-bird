@@ -68,6 +68,7 @@ class State(BaseModel):
     telegram_offset: int = 0
     processed_urls: set[str] = Field(default_factory=set)
     processed_hashes: set[str] = Field(default_factory=set)
+    queued_urls: set[str] = Field(default_factory=set)
 
     @classmethod
     def load(cls, path: Path) -> "State":
@@ -83,6 +84,7 @@ class State(BaseModel):
             telegram_offset=int(raw.get("telegram_offset", 0)),
             processed_urls={canonicalize_url(u) for u in raw.get("processed_urls", [])},
             processed_hashes=set(raw.get("processed_hashes", [])),
+            queued_urls={canonicalize_url(u) for u in raw.get("queued_urls", [])},
         )
 
     def save(self) -> None:
@@ -92,6 +94,7 @@ class State(BaseModel):
             "telegram_offset": self.telegram_offset,
             "processed_urls": sorted(self.processed_urls),
             "processed_hashes": sorted(self.processed_hashes),
+            "queued_urls": sorted(self.queued_urls),
         }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -102,8 +105,25 @@ class State(BaseModel):
         return canonicalize_url(url) in self.processed_urls
 
     def mark_url(self, url: str) -> None:
-        """Record the canonical form of ``url`` as processed."""
-        self.processed_urls.add(canonicalize_url(url))
+        """Record the canonical form of ``url`` as processed.
+
+        A shelved URL leaves the to-clip queue set.
+        """
+        canonical = canonicalize_url(url)
+        self.processed_urls.add(canonical)
+        self.queued_urls.discard(canonical)
+
+    def seen_queued_url(self, url: str) -> bool:
+        """Return True when ``url`` waits in to-clip.md for a clip."""
+        return canonicalize_url(url) in self.queued_urls
+
+    def queue_url(self, url: str) -> None:
+        """Record ``url`` as sent to to-clip.md, not yet shelved.
+
+        The clip lane checks only processed URLs, so a clip of a queued page
+        still shelves.
+        """
+        self.queued_urls.add(canonicalize_url(url))
 
     def seen_hash(self, digest: str) -> bool:
         """Return True when a clip with this content hash was processed."""

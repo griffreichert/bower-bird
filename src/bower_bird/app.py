@@ -72,7 +72,7 @@ def shelve_link(config: Config, state: State, url: str, note: str) -> str:
         if not meta.body_excerpt:
             # Unfetchable or scanned (no extractable text) — human's problem.
             queues.append_to_clip_queue(config, url)
-            state.mark_url(url)
+            state.queue_url(url)
             return "✂️ Couldn't read that PDF — queued to clip"
         # PDF lane runs synthesize_clipping on Sonnet — Haiku thins out on
         # dense multi-page papers.
@@ -89,7 +89,7 @@ def shelve_link(config: Config, state: State, url: str, note: str) -> str:
     if meta.is_thin:
         # Fetch came back empty (likely walled). Send it to the clip queue.
         queues.append_to_clip_queue(config, url, meta.title)
-        state.mark_url(url)
+        state.queue_url(url)
         return "✂️ Couldn't read that one — queued to clip"
 
     return finish_shelve(
@@ -167,7 +167,7 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
     tweet = resolve_tweet(url, timeout=config.fetch_timeout)
     if tweet is None:
         queues.append_to_clip_queue(config, url)
-        state.mark_url(url)
+        state.queue_url(url)
         return "✂️ Couldn't resolve that tweet — queued to clip"
 
     def mark_tweet_urls() -> None:
@@ -216,7 +216,8 @@ def shelve_tweet_url(config: Config, state: State, url: str, note: str = "") -> 
     if trivial_prose and not external_urls:
         # Content lives in an image, not text — a human has to look at it.
         queues.append_to_clip_queue(config, tweet.url)
-        mark_tweet_urls()
+        state.queue_url(url)
+        state.queue_url(tweet.url)
         return "✂️ Media-only tweet — queued to clip"
 
     return shelve_tweet(config, state, tweet, note, origin_url=url)
@@ -254,6 +255,8 @@ def handle_update(config: Config, state: State, text: str, sender: str = "") -> 
 
     if state.seen_url(url):
         return "🔁 Already captured"
+    if state.seen_queued_url(url):
+        return "✂️ Already queued to clip"
 
     if parsed.lane is Lane.TOOL:
         # A keep-for-later shelf item. Repos/tool pages fetch fine over httpx.
