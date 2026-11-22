@@ -185,6 +185,8 @@ pydantic-principles) — don't restate them here. Local conventions:
   No scattered module-level `_MAX_*` constants.
 - **Module-level functions are importable** — no `_` prefix outside classes;
   names say what the function does.
+- **Simpler CLI is better.** Extend an existing verb with a flag or mode before
+  adding a new `bb` verb. User verbs are `ask`, `peck` and `anki`.
 - **Structure:** flat package by design at this size; don't add subpackages.
   `ingest.py` split into `ingest.py` (boundary guard + shared bits) /
   `nodes.py` (graph-node writers) / `queues.py` (flat-file shelf/queue

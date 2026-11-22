@@ -36,15 +36,30 @@ def build() -> int:
     return run_lane(run_gather)
 
 
-def main() -> int:
-    """Run `bb [subcommand]`; no subcommand runs one full capture pass (cron).
+HELP = """\
+usage: bb <verb> [args]
 
-    Subcommands: pull, build, peck, prune, drain, lint, tidy, stale, ask,
-    touch and anki. Each is also exposed as its own `uv run <verb>` script
-    where pyproject.toml names one.
+  ask [query]   search the vault; no query lists notes (--author --since --type)
+  peck          review what is due (the /peck skill also tutors a topic)
+  anki          push cards to Anki, harvest reviews back
+
+maintenance:
+  pull build drain prune tidy lint stale touch sql
+  (bb with no verb runs one full capture pass)"""
+
+
+def main() -> int:
+    """Run `bb [verb]`; no verb runs one full capture pass.
+
+    Verbs are listed in ``HELP``. An unknown verb prints the help and exits 2
+    so a typo never starts a capture pass.
     """
     args = sys.argv[1:]
     subcommand = args[0] if args else None
+
+    if subcommand in {"help", "-h", "--help"}:
+        print(HELP)
+        return 0
 
     if subcommand == "peck":
         config = config_or_exit()
@@ -132,7 +147,10 @@ def main() -> int:
         return run_lane(run_telegram)
     if subcommand == "build":
         return run_lane(run_gather)
-    return run_lane(run_all)
+    if subcommand is None:
+        return run_lane(run_all)
+    print(HELP, file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
