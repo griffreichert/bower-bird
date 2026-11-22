@@ -36,15 +36,30 @@ def build() -> int:
     return run_lane(run_gather)
 
 
-def main() -> int:
-    """Run `bb [subcommand]`; no subcommand runs one full capture pass (cron).
+HELP = """\
+usage: bb <verb> [args]
 
-    Subcommands: pull, build, peck, prune, drain, lint, tidy, stale, ask,
-    touch and anki. Each is also exposed as its own `uv run <verb>` script
-    where pyproject.toml names one.
+  ask [query]   search the vault; no query lists notes (--author --since --type)
+  peck          review what is due (the /peck skill also tutors a topic)
+  anki          push cards to Anki, harvest reviews back
+
+maintenance:
+  pull build drain prune tidy lint stale touch sql
+  (bb with no verb runs one full capture pass)"""
+
+
+def main() -> int:
+    """Run `bb [verb]`; no verb runs one full capture pass.
+
+    Verbs are listed in ``HELP``. An unknown verb prints the help and exits 2
+    so a typo never starts a capture pass.
     """
     args = sys.argv[1:]
     subcommand = args[0] if args else None
+
+    if subcommand in {"help", "-h", "--help"}:
+        print(HELP)
+        return 0
 
     if subcommand == "peck":
         config = config_or_exit()
@@ -92,27 +107,13 @@ def main() -> int:
 
         return stale_main(config, limit=limit)
 
-    if subcommand == "ask":
-        rest = args[1:]
-        as_json = "--json" in rest
-        rest = [a for a in rest if a != "--json"]
-        limit = 20
-        if "--limit" in rest:
-            i = rest.index("--limit")
-            limit = int(rest[i + 1])
-            del rest[i : i + 2]
-        query = " ".join(rest).strip()
-        if not query:
-            print('bb ask: usage: bb ask "<query>" [--json] [--limit N]')
-            return 2
+    if subcommand in {"ask", "sql"}:
         config = config_or_exit()
         if isinstance(config, int):
             return config
-        from bower_bird.recall import ask, format_json, format_text
+        from bower_bird.recall import main as recall_main
 
-        claims = ask(config, query, limit=limit)
-        print(format_json(claims) if as_json else format_text(claims))
-        return 0
+        return recall_main(config, subcommand, args[1:])
 
     if subcommand == "touch":
         ids = args[1:]
@@ -146,7 +147,10 @@ def main() -> int:
         return run_lane(run_telegram)
     if subcommand == "build":
         return run_lane(run_gather)
-    return run_lane(run_all)
+    if subcommand is None:
+        return run_lane(run_all)
+    print(HELP, file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

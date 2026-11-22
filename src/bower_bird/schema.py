@@ -281,6 +281,59 @@ class Claim(BaseModel):
     topics: list[str] = Field(default_factory=list, description="Frontmatter topics.")
 
 
+class NoteKind(StrEnum):
+    """Which brain/ folder a note lives in."""
+
+    SOURCE = "source"
+    BOWER = "bower"
+    PERSON = "person"
+    TOOL = "tool"
+
+
+class SourceType(StrEnum):
+    """The medium of a source note, read from its URL."""
+
+    TWEET = "tweet"
+    ARTICLE = "article"
+    PAPER = "paper"
+    REPO = "repo"
+    PROSE = "prose"
+
+
+class AskHit(BaseModel):
+    """One source note `bb ask` returns, with its best claims."""
+
+    node: str = Field(description="Source note stem.")
+    type: SourceType
+    url: str = ""
+    author: str = ""
+    created: str = ""
+    score: float = Field(description="Own keyword score plus score spread by links.")
+    claims: list[str] = Field(
+        description="Matching key ideas, or the first ones when the note was "
+        "reached only through a link."
+    )
+
+
+class AskGroup(BaseModel):
+    """Source hits gathered under the hub note that connects them.
+
+    A hub is a concept, person or tool note. Hits that link to no ranked hub
+    sit in a group whose hub is None.
+    """
+
+    hub: str | None = None
+    kind: NoteKind | None = None
+    linked: int = Field(default=0, description="Notes linked to the hub.")
+    claims: list[str] = Field(
+        default_factory=list, description="The hub's own matching concept claims."
+    )
+    related: list[str] = Field(
+        default_factory=list, description="Top ranked hubs linked to this hub."
+    )
+    hits: list[AskHit] = Field(default_factory=list)
+
+
 class CardDraft(BaseModel):
     """One Anki card written for one claim.
 

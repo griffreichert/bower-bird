@@ -141,6 +141,14 @@ sources into `bowers/`).
   returns on the next push.
 - **`bb drain`** — retries the `to-clip.md` queue's unchecked X links through
   the resolver.
+- **`bb ask` / `bb sql`** — LLM free retrieval over an in-memory
+  SQLite index built from `brain/` on every call. `ask` ranks claims with FTS5
+  and passes score along `[[links]]`, grouping sources under the concept that
+  connects them. With no query it lists notes; `--author`, `--since` and `--type` filter both. `sql` runs
+  read only queries; with no argument it prints the schema.
+- **`/bb-fetch`** (agent skill, `skills/bb-fetch/`) — read only vault search
+  and briefing from any repo, wrapping `bb ask` and `bb sql`. dot-g links it into
+  `~/.claude/skills` and `~/.agents/skills` for Claude Code and Codex.
 - **`/forage`** (Claude Code skill) — outward web hunt from a gap signal or
   topic; proposes reads, never writes to the vault.
 - **`weave`** (Tier-2, `make weave`) — the deep, subscription-side pass:

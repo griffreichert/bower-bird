@@ -100,30 +100,24 @@ def test_load_claims_finds_source_and_concept_bullets() -> None:
         )
 
 
-def test_ask_ranks_on_topic_claims_above_zero_score() -> None:
+def _hits(groups):
+    return [hit for group in groups for hit in group.hits]
+
+
+def test_ask_returns_matching_sources_and_their_claims() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "BowerBird"
         _build_vault(root)
         cfg = _config(root)
-        results = ask(cfg, "agent memory")
+        hits = _hits(ask(cfg, "agent memory"))
+        nodes = {h.node for h in hits}
         check(
-            len(results) == 3, f"3 on-topic claims (pastry drops), got {len(results)}"
+            nodes == {"Forgetting curves", "Unrelated source"},
+            f"both matching sources returned, got {nodes}",
         )
         check(
-            "pastry" not in " ".join(c.text for c in results),
-            "zero-overlap claim dropped from results",
-        )
-
-
-def test_concept_claim_outranks_equal_source_claim() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d) / "BowerBird"
-        _build_vault(root)
-        cfg = _config(root)
-        results = ask(cfg, "agent memory")
-        check(
-            results[0].kind == "concept",
-            f"concept claim ranks first, got {results[0].kind}",
+            "pastry" not in " ".join(c for h in hits for c in h.claims),
+            "zero-overlap claim not shown",
         )
 
 
@@ -132,14 +126,13 @@ def test_ask_limit_truncates() -> None:
         root = Path(d) / "BowerBird"
         _build_vault(root)
         cfg = _config(root)
-        results = ask(cfg, "agent memory", limit=1)
-        check(len(results) == 1, f"limit=1 truncates to 1 result, got {len(results)}")
+        hits = _hits(ask(cfg, "agent memory", limit=1))
+        check(len(hits) == 1, f"limit=1 truncates to 1 result, got {len(hits)}")
 
 
 if __name__ == "__main__":
     test_load_claims_finds_source_and_concept_bullets()
-    test_ask_ranks_on_topic_claims_above_zero_score()
-    test_concept_claim_outranks_equal_source_claim()
+    test_ask_returns_matching_sources_and_their_claims()
     test_ask_limit_truncates()
 
     if _failures:
