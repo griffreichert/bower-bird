@@ -92,27 +92,13 @@ def main() -> int:
 
         return stale_main(config, limit=limit)
 
-    if subcommand == "ask":
-        rest = args[1:]
-        as_json = "--json" in rest
-        rest = [a for a in rest if a != "--json"]
-        limit = 20
-        if "--limit" in rest:
-            i = rest.index("--limit")
-            limit = int(rest[i + 1])
-            del rest[i : i + 2]
-        query = " ".join(rest).strip()
-        if not query:
-            print('bb ask: usage: bb ask "<query>" [--json] [--limit N]')
-            return 2
+    if subcommand in {"ask", "sql"}:
         config = config_or_exit()
         if isinstance(config, int):
             return config
-        from bower_bird.recall import ask, format_json, format_text
+        from bower_bird.recall import main as recall_main
 
-        claims = ask(config, query, limit=limit)
-        print(format_json(claims) if as_json else format_text(claims))
-        return 0
+        return recall_main(config, subcommand, args[1:])
 
     if subcommand == "touch":
         ids = args[1:]
